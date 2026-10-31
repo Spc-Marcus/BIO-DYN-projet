@@ -1,6 +1,6 @@
 """
 Un run Monte Carlo du modèle de Bullara & De Decker (2015), lancé sur
-GenOuest par lancer.sh et run.slurm (algorithme dans pseudocode.md).
+GenOuest par slurm_pipeline/ (algorithme dans pseudocode.md).
 
 La peau est une grille L x L à bords périodiques. Chaque case vaut VIDE,
 JAUNE (xantophore) ou NOIR (mélanophore). À chaque pas on tire une case et

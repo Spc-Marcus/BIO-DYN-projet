@@ -11,18 +11,14 @@ Base du projet : les fonctions sont déclarées et documentées, pas encore impl
 | Fichier | Rôle |
 |---|---|
 | `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
-| `lancer.sh` | Lance ou relance les runs sur GenOuest (job array, plages de paramètres) |
-| `run.slurm` | Une tâche du job array : une combinaison de paramètres |
+| `slurm_pipeline/` | Lancement sur GenOuest en Job Array : voir [slurm_pipeline/README.md](slurm_pipeline/README.md) |
 
 ## Lancer sur GenOuest
 
-Chaque paramètre (`--L`, `--h`, `--lX`, `--graine`, `--n_pas`) prend une valeur seule ou, sauf `--n_pas`, une plage `MIN:MAX:PAS` (bornes incluses). Une tâche est lancée par combinaison.
+Depuis la racine du projet :
 
 ```bash
-bash lancer.sh --h 16 --lX 2.5                                # un seul run
-bash lancer.sh --h 2:20:2 --lX 1.1:4.0:0.1 --graine 0:2:1     # 10 x 30 x 3 = 900 runs
+bash slurm_pipeline/01_prepare_chunks.sh --h-start 2 --h-end 20 --h-step 2   # runs et chunks
+bash slurm_pipeline/03_submit_all.sh                                         # Job Array (et relance)
+python slurm_pipeline/04_merge_results.py                                    # paramètres et état des runs
 ```
-
-Pour relancer, refaire la même commande : les runs terminés sont sautés, les runs interrompus reprennent depuis leur dernière sauvegarde.
-
-Chaque run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L{L}_h{h}_lX{lX}_g{graine}/`, et son journal dans `logs/`.
