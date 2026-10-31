@@ -11,16 +11,18 @@ Base du projet : les fonctions sont déclarées et documentées, pas encore impl
 | Fichier | Rôle |
 |---|---|
 | `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
-| `run.slurm` | Lance ou relance un run sur GenOuest |
+| `lancer.sh` | Lance ou relance les runs sur GenOuest (job array, plages de paramètres) |
+| `run.slurm` | Une tâche du job array : une combinaison de paramètres |
 
 ## Lancer sur GenOuest
 
-Depuis la racine du projet :
+Chaque paramètre (`--L`, `--h`, `--lX`, `--graine`, `--n_pas`) prend une valeur seule ou, sauf `--n_pas`, une plage `MIN:MAX:PAS` (bornes incluses). Une tâche est lancée par combinaison.
 
 ```bash
-mkdir -p logs
-sbatch run.slurm --h 16 --lX 2.5                     # nouveau run
-sbatch run.slurm --reprise out/L100_h16_lX2.5_g0     # relance, paramètres récupérés
+bash lancer.sh --h 16 --lX 2.5                                # un seul run
+bash lancer.sh --h 2:20:2 --lX 1.1:4.0:0.1 --graine 0:2:1     # 10 x 30 x 3 = 900 runs
 ```
 
-Chaque run écrit `grille.npy`, `params.json` et `grille.png` dans son dossier sous `out/`.
+Pour relancer, refaire la même commande : les runs terminés sont sautés, les runs interrompus reprennent depuis leur dernière sauvegarde.
+
+Chaque run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L{L}_h{h}_lX{lX}_g{graine}/`, et son journal dans `logs/`.

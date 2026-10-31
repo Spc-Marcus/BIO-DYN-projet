@@ -1,6 +1,6 @@
 """
-Un run Monte Carlo du modèle de Bullara & De Decker (2015), lançable sur
-GenOuest avec run.slurm (algorithme dans pseudocode.md).
+Un run Monte Carlo du modèle de Bullara & De Decker (2015), lancé sur
+GenOuest par lancer.sh et run.slurm (algorithme dans pseudocode.md).
 
 La peau est une grille L x L à bords périodiques. Chaque case vaut VIDE,
 JAUNE (xantophore) ou NOIR (mélanophore). À chaque pas on tire une case et
@@ -8,12 +8,13 @@ une règle selon les taux, puis on applique la règle si la configuration le
 permet. Comme dans l'article : bM = dX = dM = 0 et sX = sM = s, il ne reste
 donc que les règles (2), (6), (7) et (8).
 
-La grille et les paramètres sont sauvegardés régulièrement : un run coupé
-par la limite de temps Slurm peut être relancé là où il s'est arrêté.
+Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_g{graine}.
+Relancer la même commande récupère ce qui y est sauvegardé : un run coupé
+par la limite de temps Slurm reprend là où il s'est arrêté, un run terminé
+n'est pas refait.
 
 Utilisation :
     python simulation.py --h 16 --lX 2.5
-    python simulation.py --reprise out/L100_h16_lX2.5_g0
 """
 
 import argparse
@@ -47,15 +48,13 @@ def lire_arguments():
     Lit les paramètres du run sur la ligne de commande.
 
     Options :
-      --L       taille de la grille (défaut 100) ;
-      --h       portée de l'interaction à distance, en cases (défaut 16) ;
+      --L       taille de la grille, entier (défaut 100) ;
+      --h       portée de l'interaction à distance, en cases, entier
+                (défaut 16) ;
       --lX      taux de naissance du noir grâce à un jaune à distance h
                 (défaut 2.5) ;
-      --n_pas   nombre total de tentatives (défaut 10⁹) ;
-      --graine  graine du générateur aléatoire (défaut 0) ;
-      --sortie  dossier de sauvegarde (défaut out/L{L}_h{h}_lX{lX}_g{graine}) ;
-      --reprise dossier d'un run à relancer : les autres options sont alors
-                ignorées, les paramètres sont relus dans ce dossier.
+      --n_pas   nombre total de tentatives, entier (défaut 1000000000) ;
+      --graine  graine du générateur aléatoire, entier (défaut 0).
 
     Renvoie
     -------
@@ -66,10 +65,15 @@ def lire_arguments():
 
 def preparer_run(args):
     """
-    Prépare un nouveau run, ou récupère un run existant si --reprise est donné.
+    Prépare le run : nouveau, ou repris depuis son dossier s'il existe déjà.
 
-    Nouveau run : grille vide, générateur créé à partir de la graine,
-    0 pas effectué. Reprise : tout est relu avec charger_run.
+    Le dossier du run est out/L{L}_h{h}_lX{lX}_g{graine} ; il ne dépend pas
+    de n_pas.
+      - Pas de params.json dans ce dossier : nouveau run, grille vide,
+        générateur créé à partir de la graine, 0 pas effectué.
+      - Sinon : reprise, la grille, pas_faits et l'état du générateur sont
+        récupérés avec charger_run. Le n_pas de la ligne de commande
+        remplace celui sauvegardé, ce qui permet de prolonger un run.
 
     Paramètres
     ----------
@@ -293,14 +297,17 @@ def charger_run(dossier):
 
 
 if __name__ == "__main__":
-    # 1. Paramètres : ligne de commande, ou récupérés en cas de reprise
+    # 1. Paramètres : ligne de commande, et run récupéré s'il existe déjà
     args = lire_arguments()
     params, grille, pas_faits, rng = preparer_run(args)
     print(f"Run {params['sortie']} : {pas_faits} / {params['n_pas']} pas déjà faits")
 
-    # 2. Simulation (sauvegardes régulières)
-    grille = simulation_peau(grille, params, pas_faits, rng)
+    if pas_faits >= params["n_pas"]:
+        print("Run déjà terminé, rien à faire")
+    else:
+        # 2. Simulation (sauvegardes régulières)
+        grille = simulation_peau(grille, params, pas_faits, rng)
 
-    # 3. Sauvegarde finale
-    sauvegarder_run(grille, params, params["n_pas"], rng)
-    print(f"Run terminé, résultats dans {params['sortie']}")
+        # 3. Sauvegarde finale
+        sauvegarder_run(grille, params, params["n_pas"], rng)
+        print(f"Run terminé, résultats dans {params['sortie']}")
