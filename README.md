@@ -11,7 +11,7 @@ Base du projet : les fonctions sont déclarées et documentées, pas encore impl
 | Fichier | Rôle |
 |---|---|
 | `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
-| `slurm_pipeline/` | Lancement sur GenOuest en Job Array : voir [slurm_pipeline/README.md](slurm_pipeline/README.md) |
+| `slurm_pipeline/` | Lancement sur GenOuest en Job Array : scripts, [README](slurm_pipeline/README.md) et documentation avec diagrammes dans [slurm_pipeline/doc/](slurm_pipeline/doc/) |
 
 ## Lancer sur GenOuest
 
@@ -22,3 +22,5 @@ bash slurm_pipeline/01_prepare_chunks.sh --h-start 2 --h-end 20 --h-step 2   # r
 bash slurm_pipeline/03_submit_all.sh                                         # Job Array (et relance)
 python slurm_pipeline/04_merge_results.py                                    # paramètres et état des runs
 ```
+
+Exemple complet pas à pas : [slurm_pipeline/doc/exemple.md](slurm_pipeline/doc/exemple.md).

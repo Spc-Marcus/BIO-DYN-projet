@@ -8,6 +8,27 @@ Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le clust
 - Environnement conda `biodyn` accessible via `/local/env/envconda.sh` (création une seule fois : `conda create -n biodyn python numpy matplotlib`)
 - Se placer à la **racine du projet** pour toutes les commandes
 
+## Vue d'ensemble
+
+```mermaid
+flowchart LR
+    P(["01_prepare_chunks.sh"]) -->|"params_chunks/chunk_N.txt"| S(["03_submit_all.sh"])
+    S -->|"sbatch --array=1-N%40"| W["02_run_worker.slurm<br/>une tâche par chunk"]
+    W -->|"un run par ligne"| SIM["simulation.py"]
+    SIM --> OUT[("out/run/<br/>grille.npy · params.json · grille.png")]
+    OUT --> M(["04_merge_results.py"])
+    M --> CSV[("results/final_runs.csv")]
+    CSV -.->|"runs non terminés"| S
+```
+
+## Documentation
+
+| Fichier | Contenu |
+|---|---|
+| [doc/exemple.md](doc/exemple.md) | **Exemple complet** sur GenOuest : reproduire la Fig. 2, de la connexion au CSV final, relance et variante avec iridophores |
+| [doc/architecture.md](doc/architecture.md) | Composants et fichiers, découpage TASK_ID → chunk, déroulé d'un run, iridophores |
+| [doc/sequences.md](doc/sequences.md) | Diagrammes de séquence : flux complet, reprise après la limite de temps, états d'un run |
+
 ## Utilisation
 
 ### Étape 1 — Générer les runs et les découper en chunks
@@ -111,16 +132,4 @@ logs/
 └── slurm_<JOB_ID>_<TASK_ID>.out          # Logs Slurm par tâche
 ```
 
-## Iridophores
-
-Ils ne sont pas simulés comme des cellules : ils sont représentés par un masque de cases où le noir ne peut pas naître (`masque_iridophores` dans `simulation.py`). Aujourd'hui c'est une bande horizontale de `bande` lignes au milieu de la grille (Fig. 1b–c). Pour une autre forme, seule cette fonction est à modifier.
-
-## Mapping TASK_ID → chunk
-
-Le Job Array a une tâche par chunk :
-
-```
-CHUNK_ID = TASK_ID
-```
-
-Exemple avec les défauts : 19 valeurs de h × 30 valeurs de lX × 1 bande × 3 graines = 1710 runs → 171 chunks de 10 runs → `--array=1-171%40`.
+Détails : iridophores et découpage TASK_ID → chunk dans [doc/architecture.md](doc/architecture.md).
