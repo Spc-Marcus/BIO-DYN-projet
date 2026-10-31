@@ -8,7 +8,12 @@ une règle selon les taux, puis on applique la règle si la configuration le
 permet. Comme dans l'article : bM = dX = dM = 0 et sX = sM = s, il ne reste
 donc que les règles (2), (6), (7) et (8).
 
-Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_g{graine}.
+Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
+masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
+bande horizontale de `bande` lignes (0 = pas d'iridophores) ; une autre
+forme se branche en ne modifiant que masque_iridophores.
+
+Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}.
 Relancer la même commande récupère ce qui y est sauvegardé : un run coupé
 par la limite de temps Slurm reprend là où il s'est arrêté, un run terminé
 n'est pas refait.
@@ -53,6 +58,8 @@ def lire_arguments():
                 (défaut 16) ;
       --lX      taux de naissance du noir grâce à un jaune à distance h
                 (défaut 2.5) ;
+      --bande   largeur de la bande d'iridophores en lignes, entier
+                (défaut 0 = pas d'iridophores) ;
       --n_pas   nombre total de tentatives, entier (défaut 1000000000) ;
       --graine  graine du générateur aléatoire, entier (défaut 0).
 
@@ -67,8 +74,8 @@ def preparer_run(args):
     """
     Prépare le run : nouveau, ou repris depuis son dossier s'il existe déjà.
 
-    Le dossier du run est out/L{L}_h{h}_lX{lX}_g{graine} ; il ne dépend pas
-    de n_pas.
+    Le dossier du run est out/L{L}_h{h}_lX{lX}_b{bande}_g{graine} ; il ne
+    dépend pas de n_pas.
       - Pas de params.json dans ce dossier : nouveau run, grille vide,
         générateur créé à partir de la graine, 0 pas effectué.
       - Sinon : reprise, la grille, pas_faits et l'état du générateur sont
@@ -83,7 +90,7 @@ def preparer_run(args):
     Renvoie
     -------
     params : dict
-        Clés "L", "h", "lX", "n_pas", "graine", "sortie".
+        Clés "L", "h", "lX", "bande", "n_pas", "graine", "sortie".
     grille : np.ndarray d'entiers, forme (L, L)
         Grille de départ.
     pas_faits : int
@@ -107,6 +114,31 @@ def initialiser_grille(L):
     -------
     grille : np.ndarray d'entiers, forme (L, L)
         Tableau rempli de VIDE.
+    """
+    raise NotImplementedError
+
+
+def masque_iridophores(L, bande):
+    """
+    Construit le masque des cases couvertes par les iridophores.
+
+    Sur ces cases le noir ne peut pas naître : la règle (8) y est bloquée,
+    comme la règle (3) si bM était non nul (Fig. 1b-c). Pour l'instant le
+    masque est une bande horizontale de `bande` lignes au milieu de la
+    grille. Pour une autre forme d'iridophores, il suffit de modifier cette
+    fonction : le reste du code ne lit que le masque.
+
+    Paramètres
+    ----------
+    L : int
+        Taille de la grille.
+    bande : int
+        Largeur de la bande en nombre de lignes (0 = pas d'iridophores).
+
+    Renvoie
+    -------
+    noir_interdit : np.ndarray de booléens, forme (L, L)
+        True sur les cases où le noir ne peut pas naître.
     """
     raise NotImplementedError
 
@@ -184,14 +216,15 @@ def case_a_distance(grille, i, j, h, rng):
     raise NotImplementedError
 
 
-def appliquer_regle(grille, i, j, regle, h, rng):
+def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
     """
     Applique une règle à la case (i, j) si la configuration le permet.
 
       - (2) naissance jaune : la case doit être VIDE ;
       - (6) noir tue jaune : case JAUNE et voisin tiré NOIR ;
       - (7) jaune tue noir : case NOIR et voisin tiré JAUNE ;
-      - (8) noir naît à distance : case VIDE et case à distance h JAUNE.
+      - (8) noir naît à distance : case VIDE, hors iridophores
+        (noir_interdit[i, j] faux) et case à distance h JAUNE.
 
     Sinon la tentative est ratée et la grille n'est pas modifiée.
 
@@ -205,6 +238,8 @@ def appliquer_regle(grille, i, j, regle, h, rng):
         Indice de la règle, entre 0 et 3.
     h : int
         Portée de l'interaction à distance.
+    noir_interdit : np.ndarray de booléens, forme (L, L)
+        Masque des iridophores (voir masque_iridophores).
     rng : np.random.Generator
         Générateur aléatoire.
 
@@ -220,8 +255,9 @@ def simulation_peau(grille, params, pas_faits, rng):
     """
     Boucle Monte Carlo : fait les pas restants, de pas_faits à n_pas.
 
-    À chaque pas : tirer une case, tirer une règle, l'appliquer si possible.
-    Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé avec
+    Le masque des iridophores est construit une fois avec
+    masque_iridophores(L, bande). À chaque pas : tirer une case, tirer une
+    règle, l'appliquer si possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé avec
     sauvegarder_run pour pouvoir être relancé.
 
     Paramètres
@@ -256,7 +292,8 @@ def sauvegarder_run(grille, params, pas_faits, rng):
       - grille.npy  : la grille ;
       - params.json : les paramètres, pas_faits, le temps t = pas_faits / L²
                       et l'état du générateur aléatoire ;
-      - grille.png  : l'image de la grille (jaune, noir, vide en blanc).
+      - grille.png  : l'image de la grille (jaune, noir, vide en blanc),
+                      avec la zone des iridophores marquée si bande > 0.
 
     Paramètres
     ----------

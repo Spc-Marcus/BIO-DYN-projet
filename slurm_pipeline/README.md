@@ -1,6 +1,6 @@
 # Pipeline Slurm — BIO-DYN-projet
 
-Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le cluster Genouest, en balayant les paramètres **h** et **lX** (et plusieurs graines).
+Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le cluster Genouest, en balayant les paramètres **h**, **lX** et la largeur de la **bande d'iridophores** (et plusieurs graines).
 
 ## Prérequis
 
@@ -13,7 +13,7 @@ Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le clust
 ### Étape 1 — Générer les runs et les découper en chunks
 
 ```bash
-# Défauts (pseudocode.md) : L=200, h de 2 à 20 pas 1, lX de 1.1 à 4.0 pas 0.1, 3 graines
+# Défauts (pseudocode.md) : L=200, h de 2 à 20 pas 1, lX de 1.1 à 4.0 pas 0.1, pas d'iridophores, 3 graines
 bash slurm_pipeline/01_prepare_chunks.sh
 
 # Plages personnalisées (début / fin / pas)
@@ -23,9 +23,13 @@ bash slurm_pipeline/01_prepare_chunks.sh --h-start 4 --h-end 16 --h-step 4 \
 # Un seul run
 bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
     --lx-start 2.5 --lx-end 2.5 --graines 1 --n-pas 1000000000
+
+# Avec iridophores (Fig. 1b–c) : bandes de 1 et 10 lignes
+bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
+    --lx-start 2.5 --lx-end 2.5 --bande-start 1 --bande-end 10 --bande-step 9
 ```
 
-Crée `params_chunks/chunk_1.txt`, `chunk_2.txt`, … : une ligne `L h lX graine n_pas` par run.
+Crée `params_chunks/chunk_1.txt`, `chunk_2.txt`, … : une ligne `L h lX bande graine n_pas` par run.
 La taille des chunks est configurable via `CHUNK_SIZE=10` en tête du script.
 
 **Options :**
@@ -39,6 +43,9 @@ La taille des chunks est configurable via `CHUNK_SIZE=10` en tête du script.
 | `--lx-start` | `1.1` | Première valeur de lX. |
 | `--lx-end` | `4.0` | Dernière valeur de lX, incluse. |
 | `--lx-step` | `0.1` | Pas du balayage de lX. |
+| `--bande-start` | `0` | Première largeur de bande d'iridophores, en lignes (0 = pas d'iridophores). |
+| `--bande-end` | `0` | Dernière largeur, incluse. |
+| `--bande-step` | `1` | Pas du balayage de la bande. |
 | `--graines` | `3` | Nombre de répétitions (graines 0 à N-1). |
 | `--n-pas` | `100000 × L²` | Nombre de pas par run. |
 
@@ -63,7 +70,7 @@ python slurm_pipeline/04_merge_results.py
 # options : --out-dir DOSSIER  --output CSV
 ```
 
-Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, graine, n_pas, pas_faits, t, termine, dossier`). Les runs avec `termine = False` sont à relancer (étape 2).
+Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine, n_pas, pas_faits, t, termine, dossier`). Les runs avec `termine = False` sont à relancer (étape 2).
 
 ---
 
@@ -88,11 +95,11 @@ Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, graine, n_pas, 
 
 ```
 params_chunks/
-├── chunk_1.txt                            # une ligne "L h lX graine n_pas" par run
+├── chunk_1.txt                            # une ligne "L h lX bande graine n_pas" par run
 └── ...
 
 out/
-└── L200_h2_lX1.1_g0/                      # un dossier par run (simulation.py)
+└── L200_h2_lX1.1_b0_g0/                   # un dossier par run (simulation.py)
     ├── grille.npy
     ├── params.json
     └── grille.png
@@ -104,6 +111,10 @@ logs/
 └── slurm_<JOB_ID>_<TASK_ID>.out          # Logs Slurm par tâche
 ```
 
+## Iridophores
+
+Ils ne sont pas simulés comme des cellules : ils sont représentés par un masque de cases où le noir ne peut pas naître (`masque_iridophores` dans `simulation.py`). Aujourd'hui c'est une bande horizontale de `bande` lignes au milieu de la grille (Fig. 1b–c). Pour une autre forme, seule cette fonction est à modifier.
+
 ## Mapping TASK_ID → chunk
 
 Le Job Array a une tâche par chunk :
@@ -112,4 +123,4 @@ Le Job Array a une tâche par chunk :
 CHUNK_ID = TASK_ID
 ```
 
-Exemple avec les défauts : 19 valeurs de h × 30 valeurs de lX × 3 graines = 1710 runs → 171 chunks de 10 runs → `--array=1-171%40`.
+Exemple avec les défauts : 19 valeurs de h × 30 valeurs de lX × 1 bande × 3 graines = 1710 runs → 171 chunks de 10 runs → `--array=1-171%40`.

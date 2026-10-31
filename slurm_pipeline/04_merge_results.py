@@ -5,10 +5,10 @@ Usage (depuis la racine du projet) :
     python slurm_pipeline/04_merge_results.py [--out-dir out] [--output results/final_runs.csv]
 
 Entrées : les params.json écrits par simulation.py, un par dossier de run
-(out/L{L}_h{h}_lX{lX}_g{graine}/).
+(out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/).
 
 Sortie : une ligne par run, avec les colonnes
-    L, h, lX, graine, n_pas, pas_faits, t, termine, dossier
+    L, h, lX, bande, graine, n_pas, pas_faits, t, termine, dossier
 où termine vaut True si pas_faits >= n_pas. Les runs non terminés sont à
 relancer avec 03_submit_all.sh.
 """
@@ -30,7 +30,7 @@ SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 OUT_DIR      = PROJECT_ROOT / "out"
 OUTPUT_PATH  = PROJECT_ROOT / "results" / "final_runs.csv"
-COLUMNS = ["L", "h", "lX", "graine", "n_pas", "pas_faits", "t", "termine", "dossier"]
+COLUMNS = ["L", "h", "lX", "bande", "graine", "n_pas", "pas_faits", "t", "termine", "dossier"]
 
 
 def lire_arguments():
@@ -60,7 +60,7 @@ def charger_runs(out_dir):
     -------
     runs : list de dict
         Une entrée par run, avec les clés de COLUMNS (termine calculé ici,
-        dossier = nom du dossier du run), triée par h, lX puis graine.
+        dossier = nom du dossier du run), triée par h, lX, bande puis graine.
     """
     raise NotImplementedError
 

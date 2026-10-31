@@ -2,10 +2,11 @@
 # Usage : bash slurm_pipeline/01_prepare_chunks.sh [--L N] \
 #             [--h-start A] [--h-end B] [--h-step S] \
 #             [--lx-start A] [--lx-end B] [--lx-step S] \
+#             [--bande-start A] [--bande-end B] [--bande-step S] \
 #             [--graines N] [--n-pas N]
 #
-#   Génère une ligne "L h lX graine n_pas" par run (toutes les combinaisons
-#   de h, lX et graine) et les répartit dans params_chunks/chunk_1.txt,
+#   Génère une ligne "L h lX bande graine n_pas" par run (toutes les
+#   combinaisons de h, lX, bande et graine) et les répartit dans params_chunks/chunk_1.txt,
 #   chunk_2.txt, … (CHUNK_SIZE lignes max). Une tâche Slurm = un chunk.
 #
 #   --L         Taille de la grille. Défaut : 200
@@ -15,6 +16,10 @@
 #   --lx-start  Première valeur de lX. Défaut : 1.1
 #   --lx-end    Dernière valeur de lX, incluse. Défaut : 4.0
 #   --lx-step   Pas du balayage de lX. Défaut : 0.1
+#   --bande-start  Première largeur de bande d'iridophores, en lignes.
+#                  Défaut : 0 (pas d'iridophores)
+#   --bande-end    Dernière largeur, incluse. Défaut : 0
+#   --bande-step   Pas du balayage de la bande. Défaut : 1
 #   --graines   Nombre de répétitions (graines 0 à N-1). Défaut : 3
 #   --n-pas     Nombre de pas par run. Défaut : 100000 × L²
 
@@ -29,6 +34,9 @@ DEFAULT_H_STEP=1
 DEFAULT_LX_START=1.1
 DEFAULT_LX_END=4.0
 DEFAULT_LX_STEP=0.1
+DEFAULT_BANDE_START=0
+DEFAULT_BANDE_END=0
+DEFAULT_BANDE_STEP=1
 DEFAULT_GRAINES=3
 
 # ── Parsing des arguments ──────────────────────────────────────────
@@ -39,6 +47,9 @@ H_STEP="${DEFAULT_H_STEP}"
 LX_START="${DEFAULT_LX_START}"
 LX_END="${DEFAULT_LX_END}"
 LX_STEP="${DEFAULT_LX_STEP}"
+BANDE_START="${DEFAULT_BANDE_START}"
+BANDE_END="${DEFAULT_BANDE_END}"
+BANDE_STEP="${DEFAULT_BANDE_STEP}"
 GRAINES="${DEFAULT_GRAINES}"
 N_PAS=""
 
@@ -51,11 +62,14 @@ while [[ $# -gt 0 ]]; do
         --lx-start) LX_START="$2"; shift 2 ;;
         --lx-end)   LX_END="$2";   shift 2 ;;
         --lx-step)  LX_STEP="$2";  shift 2 ;;
+        --bande-start) BANDE_START="$2"; shift 2 ;;
+        --bande-end)   BANDE_END="$2";   shift 2 ;;
+        --bande-step)  BANDE_STEP="$2";  shift 2 ;;
         --graines)  GRAINES="$2";  shift 2 ;;
         --n-pas)    N_PAS="$2";    shift 2 ;;
         *)
             echo "[LOG: Erreur] Option inconnue : $1" >&2
-            echo "Usage : bash 01_prepare_chunks.sh [--L N] [--h-start A] [--h-end B] [--h-step S] [--lx-start A] [--lx-end B] [--lx-step S] [--graines N] [--n-pas N]" >&2
+            echo "Usage : bash 01_prepare_chunks.sh [--L N] [--h-start A] [--h-end B] [--h-step S] [--lx-start A] [--lx-end B] [--lx-step S] [--bande-start A] [--bande-end B] [--bande-step S] [--graines N] [--n-pas N]" >&2
             exit 1
             ;;
     esac
@@ -73,16 +87,19 @@ echo "[LOG: Nettoyage] Suppression de ${CHUNKS_DIR}" >&2
 rm -rf "${CHUNKS_DIR}"
 mkdir -p "${CHUNKS_DIR}"
 
-# ── Grilles de h et lX (LC_ALL=C : point décimal) ─────────────────
-mapfile -t H_VALUES  < <(LC_ALL=C seq "${H_START}"  "${H_STEP}"  "${H_END}")
-mapfile -t LX_VALUES < <(LC_ALL=C seq "${LX_START}" "${LX_STEP}" "${LX_END}")
+# ── Grilles de h, lX et bande (LC_ALL=C : point décimal) ──────────
+mapfile -t H_VALUES     < <(LC_ALL=C seq "${H_START}"     "${H_STEP}"     "${H_END}")
+mapfile -t LX_VALUES    < <(LC_ALL=C seq "${LX_START}"    "${LX_STEP}"    "${LX_END}")
+mapfile -t BANDE_VALUES < <(LC_ALL=C seq "${BANDE_START}" "${BANDE_STEP}" "${BANDE_END}")
 
 # ── Une ligne par run ─────────────────────────────────────────────
 RUNS=()
 for H in "${H_VALUES[@]}"; do
     for LX in "${LX_VALUES[@]}"; do
-        for (( G=0; G<GRAINES; G++ )); do
-            RUNS+=("${L} ${H} ${LX} ${G} ${N_PAS}")
+        for BANDE in "${BANDE_VALUES[@]}"; do
+            for (( G=0; G<GRAINES; G++ )); do
+                RUNS+=("${L} ${H} ${LX} ${BANDE} ${G} ${N_PAS}")
+            done
         done
     done
 done
@@ -94,7 +111,7 @@ if [[ $TOTAL -eq 0 ]]; then
 fi
 
 NUM_CHUNKS=$(( (TOTAL + CHUNK_SIZE - 1) / CHUNK_SIZE ))
-echo "[LOG: Préparation] L=${L} h=[${H_START}..${H_END}/${H_STEP}] lX=[${LX_START}..${LX_END}/${LX_STEP}] graines=${GRAINES} n_pas=${N_PAS}" >&2
+echo "[LOG: Préparation] L=${L} h=[${H_START}..${H_END}/${H_STEP}] lX=[${LX_START}..${LX_END}/${LX_STEP}] bande=[${BANDE_START}..${BANDE_END}/${BANDE_STEP}] graines=${GRAINES} n_pas=${N_PAS}" >&2
 echo "[LOG: Préparation] ${TOTAL} run(s) → ${NUM_CHUNKS} chunk(s) de ${CHUNK_SIZE} max" >&2
 
 # ── Écriture des chunks ───────────────────────────────────────────
