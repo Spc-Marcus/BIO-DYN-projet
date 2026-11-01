@@ -4,8 +4,9 @@ Timeline d'un run : GIF et planche d'images à partir de son historique.
 Indépendant de Slurm : se lance en local (après avoir rapatrié out/) ou sur
 la frontale, sur le dossier d'un run lancé avec --historique.
 
-Entrée : out/<run>/historique/grille_<pas>.npy, une grille tous les
-PAS_ENTRE_SAUVEGARDES pas (voir simulation.py).
+Entrée : out/<run>/historique/grille_<pas>.npz, une grille tous les
+PAS_ENTRE_SAUVEGARDES pas, stockée en deux matrices binaires compactées et
+compressées "jaune" et "noir" (voir sauvegarder_run dans simulation.py).
 
 Sorties, écrites dans le dossier du run :
   - timeline.gif : animation de la grille au cours du temps ;
@@ -60,7 +61,7 @@ def lister_instantanes(dossier):
     -------
     instantanes : list de (int, Path)
         Couples (pas, fichier), triés par pas croissant. Le pas est lu dans
-        le nom du fichier grille_<pas>.npy.
+        le nom du fichier grille_<pas>.npz.
 
     Lève
     ----
@@ -74,6 +75,12 @@ def lister_instantanes(dossier):
 def charger_instantanes(instantanes):
     """
     Charge les grilles listées par lister_instantanes.
+
+    Chaque grille est reconstruite à partir de ses deux matrices binaires :
+    L = jaune.shape[0], puis
+    grille = JAUNE * np.unpackbits(jaune, axis=-1, count=L)
+             + NOIR * np.unpackbits(noir, axis=-1, count=L),
+    les cases ni jaunes ni noires valant VIDE.
 
     Paramètres
     ----------

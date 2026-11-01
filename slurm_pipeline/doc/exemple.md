@@ -264,7 +264,7 @@ Par défaut, chaque sauvegarde écrase la précédente : on ne garde que la dern
 ```mermaid
 flowchart LR
     S(["03_submit_all.sh --historique"]) --> SIM["simulation.py --historique"]
-    SIM -->|"tous les 10⁷ pas"| H[("out/run/historique/<br/>grille_000010000000.npy<br/>grille_000020000000.npy<br/>…")]
+    SIM -->|"tous les 10⁷ pas"| H[("out/run/historique/<br/>grille_000010000000.npz<br/>grille_000020000000.npz<br/>…")]
     H -->|"scp ou sur la frontale"| TL(["timeline.py out/run"])
     TL --> G[("timeline.gif")]
     TL --> P[("timeline.png")]
@@ -290,13 +290,15 @@ Le run écrit, en plus des fichiers habituels :
 
 ```
 out/L100_h16_lX2.5_b0_g0/historique/
-├── grille_000010000000.npy     # t = 1000
-├── grille_000020000000.npy     # t = 2000
+├── grille_000010000000.npz     # t = 1000
+├── grille_000020000000.npz     # t = 2000
 ├── …
-└── grille_001000000000.npy     # t = 100000 (fin du run)
+└── grille_001000000000.npz     # t = 100000 (fin du run)
 ```
 
-Soit 100 grilles d'un octet par case : 10 Ko chacune pour L = 100, environ 1 Mo par run. Pour le balayage par défaut (L = 200, 4·10⁹ pas), ce serait 400 grilles de 40 Ko, soit 16 Mo par run et environ 27 Go pour les 1710 runs : on active donc l'historique pour quelques configurations, pas pour tout le balayage. En cas de relance, remettre `--historique` pour que l'historique continue.
+Chaque fichier contient deux matrices binaires, `jaune` et `noir`, compactées (1 bit par case) puis compressées ; le vide est « ni jaune ni noir ». Les motifs ayant de grandes zones uniformes, une grille de L = 200 tient en 5 à 8 Ko au lieu de 40 Ko en `uint8`, pour moins d'1 ms d'écriture par sauvegarde : négligeable face aux 10⁷ pas qui les séparent.
+
+Pour ce run (L = 100, 100 grilles), cela fait environ 0,2 Mo. Pour le balayage par défaut (L = 200, 4·10⁹ pas), ce serait 400 grilles par run, soit environ 2 Mo par run et 4 Go pour les 1710 runs : on active donc plutôt l'historique pour quelques configurations. En cas de relance, remettre `--historique` pour que l'historique continue.
 
 Ensuite, sur la frontale ou en local après `scp -r` du dossier du run :
 

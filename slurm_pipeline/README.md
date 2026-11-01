@@ -125,7 +125,7 @@ out/
     ├── grille.npy
     ├── params.json
     ├── grille.png
-    └── historique/                        # avec --historique : grille_<pas>.npy à chaque sauvegarde
+    └── historique/                        # avec --historique : grille_<pas>.npz à chaque sauvegarde
 
 results/
 └── final_runs.csv                         # paramètres et état de tous les runs (étape 3)

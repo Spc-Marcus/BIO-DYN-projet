@@ -300,10 +300,15 @@ def sauvegarder_run(grille, params, pas_faits, rng):
                       et l'état du générateur aléatoire ;
       - grille.png  : l'image de la grille (jaune, noir, vide en blanc),
                       avec la zone des iridophores marquée si bande > 0 ;
-      - historique/grille_{pas_faits:012d}.npy : seulement si
+      - historique/grille_{pas_faits:012d}.npz : seulement si
                       params["historique"] est vrai. Une copie de la grille
-                      à chaque sauvegarde, jamais écrasée (uint8, un octet
-                      par case), lue par timeline.py.
+                      à chaque sauvegarde, jamais écrasée, lue par
+                      timeline.py. Elle contient deux matrices binaires,
+                      "jaune" (grille == JAUNE) et "noir" (grille == NOIR),
+                      compactées ligne par ligne avec
+                      np.packbits(..., axis=-1) puis écrites avec
+                      np.savez_compressed. Le vide n'est pas stocké : c'est
+                      ni jaune ni noir.
 
     Paramètres
     ----------
