@@ -161,6 +161,8 @@ out/L100_h15_lX2.5_b0_g0/
 └── grille.png      # image de la grille
 ```
 
+(Plus un dossier `historique/` si le run est lancé avec `--historique`, voir section 9.)
+
 `params.json` contient les paramètres, `pas_faits`, le temps `t = pas_faits / L²` et l'état du générateur aléatoire. Contenu attendu pour un run terminé :
 
 ```json
@@ -171,6 +173,7 @@ out/L100_h15_lX2.5_b0_g0/
   "bande": 0,
   "graine": 0,
   "n_pas": 1000000000,
+  "historique": false,
   "sortie": "out/L100_h15_lX2.5_b0_g0",
   "pas_faits": 1000000000,
   "t": 100000.0,
@@ -254,6 +257,62 @@ bash slurm_pipeline/03_submit_all.sh
 
 2 runs (`out/L100_h16_lX2.5_b1_g0` et `out/L100_h16_lX2.5_b10_g0`) dans 1 chunk, donc une seule tâche (`--array=1-1%40`).
 
+## 9. Variante — garder l'historique et faire un GIF
+
+Par défaut, chaque sauvegarde écrase la précédente : on ne garde que la dernière grille. Avec `--historique` au lancement, chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` = 10⁷ pas) garde aussi une copie de la grille, ce qui permet de suivre la formation du motif.
+
+```mermaid
+flowchart LR
+    S(["03_submit_all.sh --historique"]) --> SIM["simulation.py --historique"]
+    SIM -->|"tous les 10⁷ pas"| H[("out/run/historique/<br/>grille_000010000000.npz<br/>grille_000020000000.npz<br/>…")]
+    H -->|"scp ou sur la frontale"| TL(["timeline.py out/run"])
+    TL --> G[("timeline.gif")]
+    TL --> P[("timeline.png")]
+```
+
+Lancer une configuration avec historique (h = 16, lX = 2.5, une graine) :
+
+```bash
+bash slurm_pipeline/01_prepare_chunks.sh --L 100 \
+    --h-start 16 --h-end 16 --lx-start 2.5 --lx-end 2.5 --graines 1
+bash slurm_pipeline/03_submit_all.sh --historique
+```
+
+Sortie de la soumission :
+
+```
+[LOG: Config] 1 chunk(s) dans /scratch/<login>/BIO-DYN-projet/params_chunks historique=1
+[LOG: Soumis] Pool CPU — 1 tâches → Submitted batch job 123500
+[LOG: Terminé] Job soumis. Utilisez 'squeue -u $USER' pour suivre l'avancement.
+```
+
+Le run écrit, en plus des fichiers habituels :
+
+```
+out/L100_h16_lX2.5_b0_g0/historique/
+├── grille_000010000000.npz     # t = 1000
+├── grille_000020000000.npz     # t = 2000
+├── …
+└── grille_001000000000.npz     # t = 100000 (fin du run)
+```
+
+Chaque fichier contient deux matrices binaires, `jaune` et `noir`, compactées (1 bit par case) puis compressées ; le vide est « ni jaune ni noir ». Les motifs ayant de grandes zones uniformes, une grille de L = 200 tient en 5 à 8 Ko au lieu de 40 Ko en `uint8`, pour moins d'1 ms d'écriture par sauvegarde : négligeable face aux 10⁷ pas qui les séparent.
+
+Pour ce run (L = 100, 100 grilles), cela fait environ 0,2 Mo. Pour le balayage par défaut (L = 200, 4·10⁹ pas), ce serait 400 grilles par run, soit environ 2 Mo par run et 4 Go pour les 1710 runs : on active donc plutôt l'historique pour quelques configurations. En cas de relance, remettre `--historique` pour que l'historique continue.
+
+Ensuite, sur la frontale ou en local après `scp -r` du dossier du run :
+
+```bash
+python timeline.py out/L100_h16_lX2.5_b0_g0
+```
+
+```
+100 instantanés, de t = 1000.0 à t = 100000.0
+Écrits : out/L100_h16_lX2.5_b0_g0/timeline.gif et out/L100_h16_lX2.5_b0_g0/timeline.png
+```
+
+`timeline.gif` montre la grille au cours du temps ; `timeline.png` met côte à côte 8 instants régulièrement espacés (options `--fps` et `--n_images`).
+
 ## Récapitulatif
 
 ```bash
@@ -263,4 +322,5 @@ bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 5 --h-end 15 --h-step
 bash slurm_pipeline/03_submit_all.sh                                          # étape 2 (et relance)
 squeue -u $USER                                                               # suivi
 conda activate biodyn && python slurm_pipeline/04_merge_results.py           # étape 3
+python timeline.py out/L100_h16_lX2.5_b0_g0                                    # GIF d'un run lancé avec --historique
 ```

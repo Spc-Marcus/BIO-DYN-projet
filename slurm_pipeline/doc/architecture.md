@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph Sorties["Sorties"]
-        OUT[("out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/<br/>grille.npy · params.json · grille.png")]
+        OUT[("out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/<br/>grille.npy · params.json · grille.png<br/>historique/ si --historique")]
         LOGS[("logs/slurm_JOBID_TASKID.out")]
     end
 
@@ -44,6 +44,8 @@ graph TD
     W1 & W2 & WN --> LOGS
     OUT -->|"params.json"| M
     CSV -.->|"runs non terminés : relancer l'étape 2"| S
+    OUT -.->|"historique/"| TL(["timeline.py<br/>hors Slurm"])
+    TL --> GIF[("timeline.gif · timeline.png")]
 
     style Etape1 fill:#e6f5ff,stroke:#4a90c2
     style Etape2 fill:#e6ffe6,stroke:#4caf50
@@ -58,6 +60,7 @@ graph TD
 | `02_run_worker.slurm` | nœud de calcul | Lance l'un après l'autre les runs de son chunk |
 | `simulation.py` | nœud de calcul | Un run : simulation, sauvegarde régulière, reprise |
 | `04_merge_results.py` | frontale | Rassemble les `params.json` de tous les runs dans un CSV |
+| `timeline.py` (racine) | frontale ou en local | GIF et planche d'un run lancé avec `--historique` |
 
 ## 2. Découpage en tâches : TASK_ID → chunk
 
