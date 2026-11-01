@@ -73,16 +73,17 @@ La taille des chunks est configurable via `CHUNK_SIZE=10` en tête du script.
 ### Étape 2 — Soumettre les jobs
 
 ```bash
-bash slurm_pipeline/03_submit_all.sh
+bash slurm_pipeline/03_submit_all.sh                 # sans historique
+bash slurm_pipeline/03_submit_all.sh --historique    # garde une grille à chaque sauvegarde
 ```
 
-Soumet **un seul Job Array CPU**, une tâche par chunk. Surveiller l'avancement :
+Soumet **un seul Job Array CPU**, une tâche par chunk. Avec `--historique`, chaque run garde une copie de la grille à chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` pas) dans `out/<run>/historique/`, pour en faire un GIF ou une timeline avec `timeline.py`. Surveiller l'avancement :
 
 ```bash
 squeue -u $USER
 ```
 
-**Relancer** : refaire la même commande. Les runs terminés sont sautés, les runs interrompus (limite de 24 h, nœud perdu) reprennent depuis leur dernière sauvegarde.
+**Relancer** : refaire la même commande (avec `--historique` s'il était là). Les runs terminés sont sautés, les runs interrompus (limite de 24 h, nœud perdu) reprennent depuis leur dernière sauvegarde.
 
 ### Étape 3 — Récupérer les paramètres des runs
 
@@ -123,7 +124,8 @@ out/
 └── L200_h2_lX1.1_b0_g0/                   # un dossier par run (simulation.py)
     ├── grille.npy
     ├── params.json
-    └── grille.png
+    ├── grille.png
+    └── historique/                        # avec --historique : grille_<pas>.npy à chaque sauvegarde
 
 results/
 └── final_runs.csv                         # paramètres et état de tous les runs (étape 3)

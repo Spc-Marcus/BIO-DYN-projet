@@ -20,6 +20,7 @@ n'est pas refait.
 
 Utilisation :
     python simulation.py --h 16 --lX 2.5
+    python simulation.py --h 16 --lX 2.5 --historique   # garde toutes les grilles
 """
 
 import argparse
@@ -44,7 +45,9 @@ NOIR_NAIT_A_DISTANCE = 3   # (8) X_{i±h} + S_i -> X_{i±h} + M_i
 BX = 1.0   # naissance spontanée du jaune
 S = 1.0    # élimination entre voisins de couleurs différentes
 
-# 4. Nombre de pas entre deux sauvegardes (pour pouvoir relancer)
+# 4. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
+#    Avec --historique, chaque sauvegarde est aussi gardée dans historique/
+#    (pour une timeline ou un GIF avec timeline.py).
 PAS_ENTRE_SAUVEGARDES = 10**7
 
 
@@ -61,7 +64,9 @@ def lire_arguments():
       --bande   largeur de la bande d'iridophores en lignes, entier
                 (défaut 0 = pas d'iridophores) ;
       --n_pas   nombre total de tentatives, entier (défaut 1000000000) ;
-      --graine  graine du générateur aléatoire, entier (défaut 0).
+      --graine  graine du générateur aléatoire, entier (défaut 0) ;
+      --historique  garde une copie de la grille à chaque sauvegarde
+                (désactivé par défaut).
 
     Renvoie
     -------
@@ -90,7 +95,8 @@ def preparer_run(args):
     Renvoie
     -------
     params : dict
-        Clés "L", "h", "lX", "bande", "n_pas", "graine", "sortie".
+        Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
+        "sortie".
     grille : np.ndarray d'entiers, forme (L, L)
         Grille de départ.
     pas_faits : int
@@ -293,7 +299,11 @@ def sauvegarder_run(grille, params, pas_faits, rng):
       - params.json : les paramètres, pas_faits, le temps t = pas_faits / L²
                       et l'état du générateur aléatoire ;
       - grille.png  : l'image de la grille (jaune, noir, vide en blanc),
-                      avec la zone des iridophores marquée si bande > 0.
+                      avec la zone des iridophores marquée si bande > 0 ;
+      - historique/grille_{pas_faits:012d}.npy : seulement si
+                      params["historique"] est vrai. Une copie de la grille
+                      à chaque sauvegarde, jamais écrasée (uint8, un octet
+                      par case), lue par timeline.py.
 
     Paramètres
     ----------

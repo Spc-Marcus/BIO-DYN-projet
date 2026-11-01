@@ -6,7 +6,10 @@
 #SBATCH --time=24:00:00
 #SBATCH --output=logs/slurm_%A_%a.out
 
-# Usage : sbatch --chdir=<PROJECT_ROOT> --array=1-NUM_CHUNKS%LIMIT 02_run_worker.slurm
+# Usage : sbatch --chdir=<PROJECT_ROOT> --array=1-NUM_CHUNKS%LIMIT 02_run_worker.slurm [historique]
+#
+# historique = 1 : les runs sont lancés avec --historique (une grille gardée
+# à chaque sauvegarde). Vide ou absent : pas d'historique.
 #
 # La tâche N traite params_chunks/chunk_N.txt : une ligne
 # "L h lX bande graine n_pas" par run, lancés l'un après l'autre avec
@@ -28,13 +31,14 @@ mkdir -p out logs
 # ── Chunk de la tâche ─────────────────────────────────────────────
 CHUNK_ID=${SLURM_ARRAY_TASK_ID}
 CHUNK_FILE="params_chunks/chunk_${CHUNK_ID}.txt"
+HISTORIQUE=${1:-}
 
 if [[ -z "$CHUNK_ID" || ! -f "$CHUNK_FILE" ]]; then
     echo "[LOG: Erreur] Paramètres invalides (TASK_ID=${SLURM_ARRAY_TASK_ID:-?}, fichier=${CHUNK_FILE})" >&2
     exit 1
 fi
 
-echo "[LOG: Démarrage] Job=${SLURM_JOB_ID} Tâche=${SLURM_ARRAY_TASK_ID} chunk=${CHUNK_ID} cwd=$(pwd)" >&2
+echo "[LOG: Démarrage] Job=${SLURM_JOB_ID} Tâche=${SLURM_ARRAY_TASK_ID} chunk=${CHUNK_ID} historique=${HISTORIQUE:-0} cwd=$(pwd)" >&2
 
 EXIT_CODE=0
 while read -r L H LX BANDE GRAINE N_PAS; do
@@ -47,6 +51,7 @@ while read -r L H LX BANDE GRAINE N_PAS; do
         --bande "${BANDE}" \
         --graine "${GRAINE}" \
         --n_pas "${N_PAS}" \
+        ${HISTORIQUE:+--historique} \
         < /dev/null || EXIT_CODE=1
 done < "${CHUNK_FILE}"
 

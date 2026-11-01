@@ -11,6 +11,7 @@ Base du projet : les fonctions sont déclarées et documentées, pas encore impl
 | Fichier | Rôle |
 |---|---|
 | `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
+| `timeline.py` | GIF et planche « timeline » d'un run lancé avec `--historique` (indépendant de Slurm) |
 | `slurm_pipeline/` | Lancement sur GenOuest en Job Array : scripts, [README](slurm_pipeline/README.md) et documentation avec diagrammes dans [slurm_pipeline/doc/](slurm_pipeline/doc/) |
 
 ## Lancer sur GenOuest
