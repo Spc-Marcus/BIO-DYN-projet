@@ -17,6 +17,7 @@ import argparse
 import csv
 import json
 import logging
+import sys
 from pathlib import Path
 
 logging.basicConfig(
@@ -42,14 +43,20 @@ def lire_arguments():
     -------
     args : argparse.Namespace
     """
-    raise NotImplementedError
+    parser = argparse.ArgumentParser(description="Paramètres et état de tous les runs dans un CSV")
+    parser.add_argument("--out-dir", default=str(OUT_DIR), help="dossier contenant les dossiers de run")
+    parser.add_argument("--output", default=str(OUTPUT_PATH), help="fichier CSV de sortie")
+    return parser.parse_args()
 
 
 def charger_runs(out_dir):
     """
-    Lit le params.json de chaque dossier de run de out_dir.
+    Lit le params.json de chaque dossier de run de out_dir (un niveau :
+    out_dir/<run>/params.json).
 
-    Un fichier illisible est signalé dans le log et ignoré.
+    Un fichier illisible, ou auquel il manque une colonne, est signalé dans
+    le log et ignoré. S'il n'y a aucun params.json, le script s'arrête avec
+    une erreur (code de sortie 1).
 
     Paramètres
     ----------
@@ -62,7 +69,27 @@ def charger_runs(out_dir):
         Une entrée par run, avec les clés de COLUMNS (termine calculé ici,
         dossier = nom du dossier du run), triée par h, lX, bande puis graine.
     """
-    raise NotImplementedError
+    fichiers = sorted(out_dir.glob("*/params.json"))
+    if not fichiers:
+        logger.error(f"[LOG: Erreur] Aucun params.json dans {out_dir}")
+        sys.exit(1)
+    logger.info(f"[LOG: Chargement] {len(fichiers)} run(s) trouvé(s) dans {out_dir}")
+
+    runs = []
+    for f in fichiers:
+        try:
+            with open(f) as fichier:
+                infos = json.load(fichier)
+            run = {c: infos[c] for c in COLUMNS if c not in ("termine", "dossier")}
+        except (OSError, ValueError, KeyError) as e:
+            logger.warning(f"  ✗ Lecture impossible : {f} — {e}")
+            continue
+        run["termine"] = run["pas_faits"] >= run["n_pas"]
+        run["dossier"] = f.parent.name
+        runs.append(run)
+
+    runs.sort(key=lambda r: (r["h"], r["lX"], r["bande"], r["graine"]))
+    return runs
 
 
 def ecrire_csv(runs, output):
@@ -77,7 +104,15 @@ def ecrire_csv(runs, output):
     output : Path
         Fichier CSV de sortie.
     """
-    raise NotImplementedError
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with open(output, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=COLUMNS)
+        writer.writeheader()
+        writer.writerows(runs)
+
+    n_termines = sum(1 for r in runs if r["termine"])
+    logger.info(f"[LOG: Sauvegarde] {len(runs)} run(s) → {output}")
+    logger.info(f"[LOG: Bilan] {n_termines} terminé(s), {len(runs) - n_termines} à relancer")
 
 
 def main():

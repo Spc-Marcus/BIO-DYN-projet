@@ -13,6 +13,9 @@ Sorties, écrites dans le dossier du run :
   - timeline.png : planche de quelques instants régulièrement espacés, avec
                    le temps t = pas / L² sous chaque image.
 
+Dépendances : numpy et matplotlib (le GIF est écrit avec Pillow, installé
+avec matplotlib). Les couleurs et les états viennent de simulation.py.
+
 Utilisation :
     python timeline.py out/L100_h16_lX2.5_b0_g0
     python timeline.py out/L100_h16_lX2.5_b0_g0 --fps 5 --n_images 6
@@ -26,8 +29,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import animation
+from matplotlib.colors import to_rgb
 
-from simulation import VIDE, JAUNE, NOIR
+from simulation import VIDE, JAUNE, NOIR, COULEURS
 
 
 def lire_arguments():
@@ -44,13 +48,17 @@ def lire_arguments():
     -------
     args : argparse.Namespace
     """
-    raise NotImplementedError
+    parser = argparse.ArgumentParser(description="GIF et planche d'un run lancé avec --historique")
+    parser.add_argument("dossier", help="dossier du run, par exemple out/L100_h16_lX2.5_b0_g0")
+    parser.add_argument("--fps", type=int, default=10, help="images par seconde du GIF")
+    parser.add_argument("--n_images", type=int, default=8, help="nombre d'instants sur la planche")
+    return parser.parse_args()
 
 
 def lister_instantanes(dossier):
     """
     Liste les grilles sauvegardées dans dossier/historique/, dans l'ordre du
-    temps.
+    temps. Seuls les fichiers grille_*.npz sont pris en compte.
 
     Paramètres
     ----------
@@ -69,7 +77,14 @@ def lister_instantanes(dossier):
         Si dossier/historique/ est absent ou vide (run lancé sans
         --historique).
     """
-    raise NotImplementedError
+    fichiers = sorted((dossier / "historique").glob("grille_*.npz"))
+    if not fichiers:
+        raise FileNotFoundError(f"Aucune grille dans {dossier / 'historique'} : run lancé sans --historique ?")
+
+    # Le pas est le nombre écrit dans le nom : grille_000010000000.npz -> 10000000
+    instantanes = [(int(f.stem.split("_")[1]), f) for f in fichiers]
+    instantanes.sort()
+    return instantanes
 
 
 def charger_instantanes(instantanes):
@@ -94,13 +109,28 @@ def charger_instantanes(instantanes):
     grilles : np.ndarray uint8, forme (n, L, L)
         Les grilles, dans le même ordre.
     """
-    raise NotImplementedError
+    pas = []
+    grilles = []
+    for p, fichier in instantanes:
+        donnees = np.load(fichier)
+        jaune = donnees["jaune"]
+        noir = donnees["noir"]
+        L = jaune.shape[0]
+
+        # Reconstruction : JAUNE où jaune vaut 1, NOIR où noir vaut 1, VIDE ailleurs
+        grille = JAUNE * np.unpackbits(jaune, axis=-1, count=L) + NOIR * np.unpackbits(noir, axis=-1, count=L)
+        pas.append(p)
+        grilles.append(grille.astype(np.uint8))
+
+    return np.array(pas), np.array(grilles)
 
 
 def en_couleurs(grilles):
     """
     Convertit les grilles en images : VIDE en blanc, JAUNE en jaune, NOIR
-    en noir (mêmes couleurs que grille.png de simulation.py).
+    en noir. La palette est construite à partir de COULEURS de
+    simulation.py, comme grille.png ; chaque état sert d'indice dans la
+    palette.
 
     Paramètres
     ----------
@@ -112,12 +142,16 @@ def en_couleurs(grilles):
     images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB.
     """
-    raise NotImplementedError
+    # Une couleur RGB par état, dans l'ordre VIDE, JAUNE, NOIR
+    palette = (np.array([to_rgb(c) for c in COULEURS]) * 255).astype(np.uint8)
+    return palette[grilles]
 
 
 def creer_gif(images, temps, chemin, fps):
     """
-    Écrit l'animation des images, avec le temps t en titre de chaque image.
+    Écrit l'animation des images, avec le temps t en titre de chaque image
+    (arrondi à l'unité). Une image du GIF par grille de l'historique,
+    écrite avec matplotlib.animation et PillowWriter.
 
     Paramètres
     ----------
@@ -130,13 +164,28 @@ def creer_gif(images, temps, chemin, fps):
     fps : int
         Images par seconde.
     """
-    raise NotImplementedError
+    fig = plt.figure(figsize=(5, 5))
+    image = plt.imshow(images[0], interpolation="nearest")
+    titre = plt.title(f"t = {temps[0]:.0f}")
+    plt.axis("off")
+
+    # Image k de l'animation : on change la grille et le titre
+    def mise_a_jour(k):
+        image.set_data(images[k])
+        titre.set_text(f"t = {temps[k]:.0f}")
+        return image, titre
+
+    anim = animation.FuncAnimation(fig, mise_a_jour, frames=len(images))
+    anim.save(chemin, writer=animation.PillowWriter(fps=fps))
+    plt.close(fig)
 
 
 def creer_planche(images, temps, chemin, n_images):
     """
     Écrit une planche de n_images instants régulièrement espacés, du premier
-    au dernier, côte à côte, avec le temps t sous chaque image.
+    au dernier, côte à côte, avec le temps t sous chaque image. Les indices
+    sont arrondis puis dédoublonnés : s'il y a peu de grilles, la planche
+    peut en montrer moins que n_images.
 
     Paramètres
     ----------
@@ -149,7 +198,19 @@ def creer_planche(images, temps, chemin, n_images):
     n_images : int
         Nombre d'instants affichés (au plus n).
     """
-    raise NotImplementedError
+    # Indices de n_images instants régulièrement espacés, premier et dernier inclus
+    n = min(n_images, len(images))
+    indices = np.unique(np.linspace(0, len(images) - 1, n).round().astype(int))
+
+    fig, axes = plt.subplots(1, len(indices), figsize=(2.5 * len(indices), 3), squeeze=False)
+    for ax, k in zip(axes[0], indices):
+        ax.imshow(images[k], interpolation="nearest")
+        ax.set_xlabel(f"t = {temps[k]:.0f}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    plt.savefig(chemin, dpi=150, bbox_inches="tight")
+    plt.close(fig)
 
 
 if __name__ == "__main__":
