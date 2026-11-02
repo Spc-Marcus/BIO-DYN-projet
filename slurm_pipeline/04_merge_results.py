@@ -51,9 +51,12 @@ def lire_arguments():
 
 def charger_runs(out_dir):
     """
-    Lit le params.json de chaque dossier de run de out_dir.
+    Lit le params.json de chaque dossier de run de out_dir (un niveau :
+    out_dir/<run>/params.json).
 
-    Un fichier illisible est signalé dans le log et ignoré.
+    Un fichier illisible, ou auquel il manque une colonne, est signalé dans
+    le log et ignoré. S'il n'y a aucun params.json, le script s'arrête avec
+    une erreur (code de sortie 1).
 
     Paramètres
     ----------

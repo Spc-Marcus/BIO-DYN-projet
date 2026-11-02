@@ -13,6 +13,9 @@ Sorties, écrites dans le dossier du run :
   - timeline.png : planche de quelques instants régulièrement espacés, avec
                    le temps t = pas / L² sous chaque image.
 
+Dépendances : numpy et matplotlib (le GIF est écrit avec Pillow, installé
+avec matplotlib). Les couleurs et les états viennent de simulation.py.
+
 Utilisation :
     python timeline.py out/L100_h16_lX2.5_b0_g0
     python timeline.py out/L100_h16_lX2.5_b0_g0 --fps 5 --n_images 6
@@ -55,7 +58,7 @@ def lire_arguments():
 def lister_instantanes(dossier):
     """
     Liste les grilles sauvegardées dans dossier/historique/, dans l'ordre du
-    temps.
+    temps. Seuls les fichiers grille_*.npz sont pris en compte.
 
     Paramètres
     ----------
@@ -125,7 +128,9 @@ def charger_instantanes(instantanes):
 def en_couleurs(grilles):
     """
     Convertit les grilles en images : VIDE en blanc, JAUNE en jaune, NOIR
-    en noir (mêmes couleurs que grille.png de simulation.py).
+    en noir. La palette est construite à partir de COULEURS de
+    simulation.py, comme grille.png ; chaque état sert d'indice dans la
+    palette.
 
     Paramètres
     ----------
@@ -144,7 +149,9 @@ def en_couleurs(grilles):
 
 def creer_gif(images, temps, chemin, fps):
     """
-    Écrit l'animation des images, avec le temps t en titre de chaque image.
+    Écrit l'animation des images, avec le temps t en titre de chaque image
+    (arrondi à l'unité). Une image du GIF par grille de l'historique,
+    écrite avec matplotlib.animation et PillowWriter.
 
     Paramètres
     ----------
@@ -176,7 +183,9 @@ def creer_gif(images, temps, chemin, fps):
 def creer_planche(images, temps, chemin, n_images):
     """
     Écrit une planche de n_images instants régulièrement espacés, du premier
-    au dernier, côte à côte, avec le temps t sous chaque image.
+    au dernier, côte à côte, avec le temps t sous chaque image. Les indices
+    sont arrondis puis dédoublonnés : s'il y a peu de grilles, la planche
+    peut en montrer moins que n_images.
 
     Paramètres
     ----------

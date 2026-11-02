@@ -16,7 +16,12 @@ forme se branche en ne modifiant que masque_iridophores.
 Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}.
 Relancer la même commande récupère ce qui y est sauvegardé : un run coupé
 par la limite de temps Slurm reprend là où il s'est arrêté, un run terminé
-n'est pas refait.
+n'est pas refait. Le générateur aléatoire est un random.Random dont l'état
+est sauvegardé avec la grille : un run repris donne exactement la même
+grille finale qu'un run fait d'une traite.
+
+Durée : environ 1 µs par pas en Python pur, soit 15 à 20 min pour 10⁹ pas
+avec L = 100 (mesuré sur une machine de test).
 
 Utilisation :
     python simulation.py --h 16 --lX 2.5
@@ -94,12 +99,15 @@ def preparer_run(args):
     Prépare le run : nouveau, ou repris depuis son dossier s'il existe déjà.
 
     Le dossier du run est out/L{L}_h{h}_lX{lX}_b{bande}_g{graine} ; il ne
-    dépend pas de n_pas.
+    dépend ni de n_pas ni de historique.
       - Pas de params.json dans ce dossier : nouveau run, grille vide,
-        générateur créé à partir de la graine, 0 pas effectué.
+        générateur random.Random(graine), 0 pas effectué.
       - Sinon : reprise, la grille, pas_faits et l'état du générateur sont
-        récupérés avec charger_run. Le n_pas de la ligne de commande
-        remplace celui sauvegardé, ce qui permet de prolonger un run.
+        récupérés avec charger_run. Les paramètres renvoyés sont toujours
+        ceux de la ligne de commande : L, h, lX, bande et graine sont les
+        mêmes (ils forment le nom du dossier), tandis que n_pas et
+        historique peuvent changer, ce qui permet de prolonger un run ou de
+        commencer à garder son historique.
 
     Paramètres
     ----------
@@ -111,8 +119,8 @@ def preparer_run(args):
     params : dict
         Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
         "sortie".
-    grille : np.ndarray d'entiers, forme (L, L)
-        Grille de départ.
+    grille : np.ndarray uint8, forme (L, L)
+        Grille de départ (vide, ou relue pour une reprise).
     pas_faits : int
         Nombre de pas déjà effectués.
     rng : random.Random
@@ -152,7 +160,7 @@ def initialiser_grille(L):
 
     Renvoie
     -------
-    grille : np.ndarray d'entiers, forme (L, L)
+    grille : np.ndarray uint8, forme (L, L)
         Tableau rempli de VIDE.
     """
     return np.full((L, L), VIDE, dtype=np.uint8)
@@ -165,8 +173,10 @@ def masque_iridophores(L, bande):
     Sur ces cases le noir ne peut pas naître : la règle (8) y est bloquée,
     comme la règle (3) si bM était non nul (Fig. 1b-c). Pour l'instant le
     masque est une bande horizontale de `bande` lignes au milieu de la
-    grille. Pour une autre forme d'iridophores, il suffit de modifier cette
-    fonction : le reste du code ne lit que le masque.
+    grille : les lignes (L - bande) // 2 à (L - bande) // 2 + bande - 1.
+    Pour une autre forme d'iridophores, il suffit de modifier cette
+    fonction : le reste du code (simulation et image) ne lit que le
+    masque.
 
     Paramètres
     ----------
@@ -192,7 +202,9 @@ def tirer_regle(proba, rng):
     Tire une règle au hasard selon les probabilités données.
 
     Tirage pondéré : on découpe [0, 1[ en segments de longueur proba[k] et
-    on renvoie le segment dans lequel tombe un nombre uniforme u.
+    on renvoie le segment dans lequel tombe un nombre uniforme u. Si les
+    arrondis font que u dépasse la somme cumulée, la dernière règle est
+    renvoyée.
 
     Paramètres
     ----------
@@ -219,8 +231,9 @@ def voisin_au_hasard(grille, i, j, rng):
     """
     Renvoie l'état d'un des 4 voisins directs de la case (i, j).
 
-    Le voisin est tiré parmi haut, bas, gauche, droite ; les bords sont
-    périodiques (mod L). Utilisé par les règles (6) et (7).
+    Le voisin est tiré uniformément parmi haut, bas, gauche, droite avec
+    un seul nombre aléatoire ; les bords sont périodiques (mod L). Utilisé
+    par les règles (6) et (7).
 
     Paramètres
     ----------
@@ -246,8 +259,8 @@ def case_a_distance(grille, i, j, h, rng):
     Renvoie l'état d'une case située à distance h de la case (i, j).
 
     On tire un angle alpha uniforme dans [0, 2π[ et on regarde la case
-    (arrondi(i + h cos alpha), arrondi(j + h sin alpha)), modulo L.
-    Utilisé par la règle (8).
+    (round(i + h cos alpha), round(j + h sin alpha)), modulo L, avec le
+    round de Python (entier le plus proche). Utilisé par la règle (8).
 
     Paramètres
     ----------
@@ -282,7 +295,10 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
       - (8) noir naît à distance : case VIDE, hors iridophores
         (noir_interdit[i, j] faux) et case à distance h JAUNE.
 
-    Sinon la tentative est ratée et la grille n'est pas modifiée.
+    Sinon la tentative est ratée et la grille n'est pas modifiée. Le
+    voisin (règles 6 et 7) ou la case à distance (règle 8) n'est tiré que
+    si la case a le bon état, comme dans pseudocode.md : le nombre de
+    tirages aléatoires dépend donc de la configuration.
 
     Paramètres
     ----------
@@ -339,9 +355,12 @@ def simulation_peau(grille, params, pas_faits, rng):
     Boucle Monte Carlo : fait les pas restants, de pas_faits à n_pas.
 
     Le masque des iridophores est construit une fois avec
-    masque_iridophores(L, bande). À chaque pas : tirer une case, tirer une
-    règle, l'appliquer si possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le
-    run est sauvegardé avec sauvegarder_run pour pouvoir être relancé.
+    masque_iridophores(L, bande), et les probabilités des règles une fois
+    avec P_k = taux_k / somme(taux), taux = [BX, S, S, lX]. À chaque pas :
+    tirer une case (i, j) uniforme, tirer une règle, l'appliquer si
+    possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé
+    avec sauvegarder_run pour pouvoir être relancé, sauf au dernier pas :
+    la sauvegarde finale est faite par le programme principal.
 
     Paramètres
     ----------
@@ -361,8 +380,10 @@ def simulation_peau(grille, params, pas_faits, rng):
 
     Notes
     -----
-    Si la boucle est trop lente en Python pur, la compiler avec numba
-    (@njit).
+    Environ 1 µs par pas en Python pur. Pour aller plus vite, numba ne
+    compile pas random.Random : il faudrait passer la boucle et les tirages
+    à numba avec np.random, en gardant une façon de sauvegarder l'état du
+    générateur pour la reprise.
     """
     # 1. Paramètres du run
     L = params["L"]
@@ -393,14 +414,23 @@ def simulation_peau(grille, params, pas_faits, rng):
 
 def sauvegarder_run(grille, params, pas_faits, rng):
     """
-    Sauvegarde le run dans le dossier params["sortie"] (créé si besoin).
+    Sauvegarde le run dans le dossier params["sortie"] (créé si besoin),
+    puis affiche une ligne « Sauvegarde : pas_faits / n_pas pas, t = … »
+    pour suivre l'avancement dans le journal Slurm.
+
+    grille.npy et params.json sont d'abord écrits sous des noms temporaires
+    puis renommés : un job tué pendant la sauvegarde laisse la sauvegarde
+    précédente intacte.
 
     Fichiers écrits :
       - grille.npy  : la grille ;
       - params.json : les paramètres, pas_faits, le temps t = pas_faits / L²
-                      et l'état du générateur aléatoire ;
-      - grille.png  : l'image de la grille (jaune, noir, vide en blanc),
-                      avec la zone des iridophores marquée si bande > 0 ;
+                      et l'état du générateur aléatoire (rng.getstate(),
+                      sous la clé "etat_generateur") ;
+      - grille.png  : l'image de la grille (couleurs COULEURS : vide en
+                      blanc, jaune, noir), avec la zone des iridophores en
+                      gris argenté semi-transparent si le masque n'est pas
+                      vide ;
       - historique/grille_{pas_faits:012d}.npz : seulement si
                       params["historique"] est vrai. Une copie de la grille
                       à chaque sauvegarde, jamais écrasée, lue par
@@ -468,6 +498,9 @@ def charger_run(dossier):
     """
     Récupère un run sauvegardé par sauvegarder_run, pour le relancer.
 
+    Le générateur est recréé puis remis dans l'état sauvegardé (JSON ayant
+    changé les tuples de rng.getstate() en listes, ils sont reconvertis).
+
     Paramètres
     ----------
     dossier : str
@@ -476,8 +509,9 @@ def charger_run(dossier):
     Renvoie
     -------
     params : dict
-        Paramètres relus dans params.json.
-    grille : np.ndarray, forme (L, L)
+        Paramètres relus dans params.json, sans pas_faits, t ni
+        etat_generateur (renvoyés à part ou utilisés pour rng).
+    grille : np.ndarray uint8, forme (L, L)
         Grille relue dans grille.npy.
     pas_faits : int
         Nombre de pas déjà effectués.
