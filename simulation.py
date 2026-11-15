@@ -5,8 +5,11 @@ GenOuest par slurm_pipeline/ (algorithme dans pseudocode.md).
 La peau est une grille L x L à bords périodiques. Chaque case vaut VIDE,
 JAUNE (xantophore) ou NOIR (mélanophore). À chaque pas on tire une case et
 une règle selon les taux, puis on applique la règle si la configuration le
-permet. Comme dans l'article : bM = dX = dM = 0 et sX = sM = s, il ne reste
-donc que les règles (2), (6), (7) et (8).
+permet. Les 7 règles (2) à (8) du pseudo-code sont codées. Leurs taux sont
+les constantes BX, BM, DX, DM et S ci-dessous, fixées comme dans l'article
+(bM = dX = dM = 0, sX = sM = s = 1, bX = 1) : avec ces valeurs les règles
+(3), (4) et (5) ont un taux nul et ne sont jamais tirées. Seuls h et lX
+varient d'un run à l'autre.
 
 Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
 masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
@@ -46,15 +49,21 @@ JAUNE = 1
 NOIR = 2
 COULEURS = ["white", "gold", "black"]   # couleur de VIDE, JAUNE, NOIR sur les images
 
-# 2. Règles restantes, dans l'ordre des taux [BX, S, S, lX]
-NAISSANCE_JAUNE = 0        # (2) S_i -> X_i
-NOIR_TUE_JAUNE = 1         # (6) M_{i±1} + X_i -> M_{i±1} + S_i
-JAUNE_TUE_NOIR = 2         # (7) X_{i±1} + M_i -> X_{i±1} + S_i
-NOIR_NAIT_A_DISTANCE = 3   # (8) X_{i±h} + S_i -> X_{i±h} + M_i
+# 2. Règles (2) à (8), dans l'ordre des taux [BX, BM, DX, DM, S, S, lX]
+NAISSANCE_JAUNE = 0        # (2) S_i -> X_i                        taux bX
+NAISSANCE_NOIR = 1         # (3) S_i -> M_i                        taux bM
+MORT_JAUNE = 2             # (4) X_i -> S_i                        taux dX
+MORT_NOIR = 3              # (5) M_i -> S_i                        taux dM
+NOIR_TUE_JAUNE = 4         # (6) M_{i±1} + X_i -> M_{i±1} + S_i    taux sM
+JAUNE_TUE_NOIR = 5         # (7) X_{i±1} + M_i -> X_{i±1} + S_i    taux sX
+NOIR_NAIT_A_DISTANCE = 6   # (8) X_{i±h} + S_i -> X_{i±h} + M_i    taux lX
 
-# 3. Taux fixés comme dans l'article
+# 3. Taux fixés comme dans l'article (lX est un paramètre du run)
 BX = 1.0   # naissance spontanée du jaune
-S = 1.0    # élimination entre voisins de couleurs différentes
+BM = 0.0   # naissance spontanée du noir
+DX = 0.0   # mort naturelle du jaune
+DM = 0.0   # mort naturelle du noir
+S = 1.0    # élimination entre voisins de couleurs différentes (sX = sM = s)
 
 # 4. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
 #    Avec --historique, chaque sauvegarde est aussi gardée dans historique/
@@ -208,15 +217,16 @@ def tirer_regle(proba, rng):
 
     Paramètres
     ----------
-    proba : liste de 4 float
-        Probabilités des règles, [BX, S, S, lX] / somme.
+    proba : liste de 7 float
+        Probabilités des règles, [BX, BM, DX, DM, S, S, lX] / somme.
     rng : random.Random
         Générateur aléatoire.
 
     Renvoie
     -------
     regle : int
-        Indice de la règle tirée, entre 0 et 3.
+        Indice de la règle tirée, entre 0 et 6. Une règle de taux nul
+        n'est jamais tirée.
     """
     u = rng.random()
     cumul = 0.0
@@ -290,6 +300,9 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
     Applique une règle à la case (i, j) si la configuration le permet.
 
       - (2) naissance jaune : la case doit être VIDE ;
+      - (3) naissance noir : case VIDE et hors iridophores ;
+      - (4) mort jaune : la case doit être JAUNE ;
+      - (5) mort noir : la case doit être NOIR ;
       - (6) noir tue jaune : case JAUNE et voisin tiré NOIR ;
       - (7) jaune tue noir : case NOIR et voisin tiré JAUNE ;
       - (8) noir naît à distance : case VIDE, hors iridophores
@@ -307,7 +320,7 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
     i, j : int
         Coordonnées de la case tirée.
     regle : int
-        Indice de la règle, entre 0 et 3.
+        Indice de la règle, entre 0 et 6.
     h : int
         Portée de l'interaction à distance.
     noir_interdit : np.ndarray de booléens, forme (L, L)
@@ -326,6 +339,24 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
         # (2) S_i -> X_i
         if case == VIDE:
             grille[i, j] = JAUNE
+            return True
+
+    elif regle == NAISSANCE_NOIR:
+        # (3) S_i -> M_i, sauf sur les iridophores
+        if case == VIDE and not noir_interdit[i, j]:
+            grille[i, j] = NOIR
+            return True
+
+    elif regle == MORT_JAUNE:
+        # (4) X_i -> S_i
+        if case == JAUNE:
+            grille[i, j] = VIDE
+            return True
+
+    elif regle == MORT_NOIR:
+        # (5) M_i -> S_i
+        if case == NOIR:
+            grille[i, j] = VIDE
             return True
 
     elif regle == NOIR_TUE_JAUNE:
@@ -356,11 +387,11 @@ def simulation_peau(grille, params, pas_faits, rng):
 
     Le masque des iridophores est construit une fois avec
     masque_iridophores(L, bande), et les probabilités des règles une fois
-    avec P_k = taux_k / somme(taux), taux = [BX, S, S, lX]. À chaque pas :
-    tirer une case (i, j) uniforme, tirer une règle, l'appliquer si
-    possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé
-    avec sauvegarder_run pour pouvoir être relancé, sauf au dernier pas :
-    la sauvegarde finale est faite par le programme principal.
+    avec P_k = taux_k / somme(taux), taux = [BX, BM, DX, DM, S, S, lX]. À
+    chaque pas : tirer une case (i, j) uniforme, tirer une règle,
+    l'appliquer si possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est
+    sauvegardé avec sauvegarder_run pour pouvoir être relancé, sauf au
+    dernier pas : la sauvegarde finale est faite par le programme principal.
 
     Paramètres
     ----------
@@ -391,7 +422,7 @@ def simulation_peau(grille, params, pas_faits, rng):
     noir_interdit = masque_iridophores(L, params["bande"])
 
     # 2. Probabilité de choisir chaque règle : P_k = taux_k / somme(taux)
-    taux = [BX, S, S, params["lX"]]
+    taux = [BX, BM, DX, DM, S, S, params["lX"]]
     somme = sum(taux)
     proba = [t / somme for t in taux]
 
