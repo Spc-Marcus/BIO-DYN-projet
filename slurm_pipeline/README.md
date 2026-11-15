@@ -94,6 +94,14 @@ python slurm_pipeline/04_merge_results.py
 
 Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine, n_pas, pas_faits, t, termine, dossier`). Les runs avec `termine = False` sont à relancer (étape 2).
 
+### Étape 4 — Analyser les motifs
+
+```bash
+python analyse.py
+```
+
+Mesure la longueur d'onde et le type de motif de chaque run de `out/` et les compare à la théorie (`results/analyse.csv` et deux figures). Voir [doc/theorie_et_analyse.md](../doc/theorie_et_analyse.md).
+
 ---
 
 ## Architecture des scripts
