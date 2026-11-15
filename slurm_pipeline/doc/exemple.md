@@ -34,7 +34,7 @@ flowchart LR
     O -->|"04_merge_results.py"| F
 ```
 
-> Les fonctions de `simulation.py` et `04_merge_results.py` ne sont pas encore implémentées. Les sorties des scripts Slurm (étapes 1 et 2) ci-dessous sont celles qu'ils produisent réellement ; celles des runs (journaux de `simulation.py`, `params.json`, `final_runs.csv`) montrent le format attendu une fois le code écrit. Les numéros de job et le login sont des exemples.
+> Les sorties ci-dessous ont exactement le format produit par les scripts. Les numéros de job, le login, les nœuds et l'affichage de `squeue` sont des exemples. Durée : environ 1 µs par pas mesuré sur une machine de test, soit de l'ordre de 15 à 20 min par run de 10⁹ pas (L = 100) et 3 h pour une tâche de 10 runs ; la vitesse des nœuds de GenOuest peut différer.
 
 ## 0. Se connecter et récupérer le projet
 
@@ -131,21 +131,21 @@ squeue -u $USER
 123456_3    genouest biodyn_c  login  R   0:42      1 node03
 ```
 
-Chaque tâche écrit son journal dans `logs/slurm_<JOBID>_<TASKID>.out`. Par exemple `logs/slurm_123456_3.out`, une fois la tâche 3 terminée :
+Chaque tâche écrit son journal dans `logs/slurm_<JOBID>_<TASKID>.out`, avec une ligne `Sauvegarde` tous les 10⁷ pas pour suivre l'avancement (`tail -f logs/slurm_123456_3.out`). Par exemple, une fois la tâche 3 terminée :
 
 ```
-[LOG: Démarrage] Job=123459 Tâche=3 chunk=3 cwd=/scratch/<login>/BIO-DYN-projet
+[LOG: Démarrage] Job=123459 Tâche=3 chunk=3 historique=0 cwd=/scratch/<login>/BIO-DYN-projet
 [LOG: Run] L=100 h=15 lX=2.5 bande=0 graine=0 n_pas=1000000000
 Run out/L100_h15_lX2.5_b0_g0 : 0 / 1000000000 pas déjà faits
+Sauvegarde : 10000000 / 1000000000 pas, t = 1000
+Sauvegarde : 20000000 / 1000000000 pas, t = 2000
+…
+Sauvegarde : 1000000000 / 1000000000 pas, t = 100000
 Run terminé, résultats dans out/L100_h15_lX2.5_b0_g0
 [LOG: Run] L=100 h=15 lX=2.5 bande=0 graine=1 n_pas=1000000000
 Run out/L100_h15_lX2.5_b0_g1 : 0 / 1000000000 pas déjà faits
-Run terminé, résultats dans out/L100_h15_lX2.5_b0_g1
-[LOG: Run] L=100 h=15 lX=3.5 bande=0 graine=0 n_pas=1000000000
-Run out/L100_h15_lX3.5_b0_g0 : 0 / 1000000000 pas déjà faits
-Run terminé, résultats dans out/L100_h15_lX3.5_b0_g0
-[LOG: Run] L=100 h=15 lX=3.5 bande=0 graine=1 n_pas=1000000000
-Run out/L100_h15_lX3.5_b0_g1 : 0 / 1000000000 pas déjà faits
+Sauvegarde : 10000000 / 1000000000 pas, t = 1000
+…
 Run terminé, résultats dans out/L100_h15_lX3.5_b0_g1
 [LOG: Fin] Tâche=3 chunk=3 code_sortie=0
 ```
@@ -163,7 +163,7 @@ out/L100_h15_lX2.5_b0_g0/
 
 (Plus un dossier `historique/` si le run est lancé avec `--historique`, voir section 9.)
 
-`params.json` contient les paramètres, `pas_faits`, le temps `t = pas_faits / L²` et l'état du générateur aléatoire. Contenu attendu pour un run terminé :
+`params.json` contient les paramètres, `pas_faits`, le temps `t = pas_faits / L²` et l'état du générateur aléatoire (module `random`, 625 entiers), pour qu'une reprise continue exactement la même suite de tirages. Pour un run terminé :
 
 ```json
 {
@@ -171,19 +171,19 @@ out/L100_h15_lX2.5_b0_g0/
   "h": 15,
   "lX": 2.5,
   "bande": 0,
-  "graine": 0,
   "n_pas": 1000000000,
+  "graine": 0,
   "historique": false,
   "sortie": "out/L100_h15_lX2.5_b0_g0",
   "pas_faits": 1000000000,
   "t": 100000.0,
-  "etat_generateur": { "…": "…" }
+  "etat_generateur": [3, [4233381179, 2726965233, …], null]
 }
 ```
 
 ## 5. Relancer après une coupure
 
-Supposons que la tâche 1 atteigne la limite de 24 h pendant son 7ᵉ run (h = 5, lX = 3.5, graine 0). Le run a été sauvegardé régulièrement ; les 6 premiers sont terminés, les runs 8 à 10 n'ont pas commencé.
+Supposons que la tâche 1 soit interrompue pendant son 7ᵉ run (h = 5, lX = 3.5, graine 0) : nœud perdu, job annulé, ou limite de 24 h avec des runs plus longs. Le run a été sauvegardé régulièrement ; les 6 premiers sont terminés, les runs 8 à 10 n'ont pas commencé.
 
 On relance avec **la même commande**, sans refaire l'étape 1 :
 
@@ -194,20 +194,23 @@ bash slurm_pipeline/03_submit_all.sh
 Les tâches 2 et 3 sautent tous leurs runs. Le journal de la nouvelle tâche 1 commence ainsi :
 
 ```
-[LOG: Démarrage] Job=123470 Tâche=1 chunk=1 cwd=/scratch/<login>/BIO-DYN-projet
+[LOG: Démarrage] Job=123470 Tâche=1 chunk=1 historique=0 cwd=/scratch/<login>/BIO-DYN-projet
 [LOG: Run] L=100 h=5 lX=0.5 bande=0 graine=0 n_pas=1000000000
 Run out/L100_h5_lX0.5_b0_g0 : 1000000000 / 1000000000 pas déjà faits
 Run déjà terminé, rien à faire
 …
 [LOG: Run] L=100 h=5 lX=3.5 bande=0 graine=0 n_pas=1000000000
 Run out/L100_h5_lX3.5_b0_g0 : 420000000 / 1000000000 pas déjà faits
+Sauvegarde : 430000000 / 1000000000 pas, t = 43000
+…
+Sauvegarde : 1000000000 / 1000000000 pas, t = 100000
 Run terminé, résultats dans out/L100_h5_lX3.5_b0_g0
 [LOG: Run] L=100 h=5 lX=3.5 bande=0 graine=1 n_pas=1000000000
 Run out/L100_h5_lX3.5_b0_g1 : 0 / 1000000000 pas déjà faits
 …
 ```
 
-Le run 7 reprend à 420 000 000 pas, sa dernière sauvegarde, avec le même état du générateur.
+Le run 7 reprend à 420 000 000 pas, sa dernière sauvegarde, avec le même état du générateur : sa grille finale est identique, case par case, à celle d'un run qui n'aurait pas été coupé.
 
 Pour **prolonger** des runs terminés : refaire l'étape 1 avec un `--n-pas` plus grand (mêmes plages), puis l'étape 2. Les dossiers ne dépendent pas de `n_pas`, les runs repartent donc de là où ils s'étaient arrêtés.
 
