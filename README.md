@@ -12,6 +12,7 @@ Code du projet : un run Monte Carlo (`simulation.py`), la timeline d'un run (`ti
 |---|---|
 | `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
 | `timeline.py` | GIF et planche « timeline » d'un run lancé avec `--historique` (indépendant de Slurm) |
+| `figure_article.py` | Fig. 2 de l'article : grilles finales de tous les runs de `out/` dans le plan $(l_X, h)$, avec $h_T$ et $\lambda/2$ du champ moyen |
 | `slurm_pipeline/` | Lancement sur GenOuest en Job Array : scripts, [README](slurm_pipeline/README.md) et documentation avec diagrammes dans [slurm_pipeline/doc/](slurm_pipeline/doc/) |
 
 ## Lancer un run en local
@@ -33,6 +34,9 @@ Depuis la racine du projet :
 bash slurm_pipeline/01_prepare_chunks.sh --h-start 2 --h-end 20 --h-step 2   # runs et chunks
 bash slurm_pipeline/03_submit_all.sh                                         # Job Array (et relance)
 python slurm_pipeline/04_merge_results.py                                    # paramètres et état des runs
+python figure_article.py                                                     # Fig. 2 → results/figures/
 ```
+
+`figure_article.py` ne demande aucune valeur : il lit tous les `out/*/params.json`, fait une figure par couple (L, bande) et place chaque run en $(l_X, h)$. Avec plusieurs graines, il montre le run le plus avancé ; un run pas encore terminé (par exemple prolongé à 10⁹ pas) apparaît avec un cadre orange ; les dossiers incomplets sont ignorés.
 
 Exemple complet pas à pas : [slurm_pipeline/doc/exemple.md](slurm_pipeline/doc/exemple.md).
