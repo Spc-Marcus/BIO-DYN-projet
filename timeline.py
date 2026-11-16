@@ -192,7 +192,7 @@ def creer_planche(images, temps, chemin, n_images):
     images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB, dans l'ordre du temps.
     temps : np.ndarray, forme (n,)
-        Temps t = pas / L² de chaque image.
+        Temps t = pas de chaque image.
     chemin : Path
         Fichier PNG à écrire.
     n_images : int
@@ -218,7 +218,7 @@ if __name__ == "__main__":
     args = lire_arguments()
     dossier = Path(args.dossier)
     pas, grilles = charger_instantanes(lister_instantanes(dossier))
-    temps = pas / grilles.shape[1] ** 2
+    temps = pas 
     print(f"{len(pas)} instantanés, de t = {temps[0]} à t = {temps[-1]}")
 
     # 2. Images en couleurs
