@@ -5,16 +5,14 @@ Usage (depuis la racine du projet) :
     python slurm_pipeline/04_merge_results.py [--out-dir out] [--output results/final_runs.csv]
 
 Entrées : les params.json écrits par simulation.py, un par dossier de run
-(out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/, suivi d'un suffixe par option du
-modèle différente de sa valeur par défaut).
+(out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/, plus les suffixes des options).
 
 Sortie : une ligne par run, avec les colonnes
     L, h, lX, bande, graine, bX, bM, dX, dM, s, reseau, contact, rho0, fX0,
     lB, alpha, tB, n_pas, pas_faits, t, termine, dossier
 où termine vaut True si pas_faits >= n_pas. Les runs non terminés sont à
-relancer avec 03_submit_all.sh. Les options du modèle (bX à tB) absentes
-d'un params.json, pour un run lancé avant leur ajout, prennent leur valeur
-par défaut (DEFAUTS).
+relancer avec 03_submit_all.sh. Pour un run lancé avant les options du
+modèle (bX à tB), elles valent leur défaut.
 """
 
 import argparse
@@ -64,8 +62,7 @@ def charger_runs(out_dir):
     out_dir/<run>/params.json).
 
     Un fichier illisible, ou auquel il manque une colonne, est signalé dans
-    le log et ignoré ; une option du modèle absente (run lancé avant son
-    ajout) prend sa valeur par défaut, sans que le run soit ignoré. S'il n'y
+    le log et ignoré (une option du modèle absente vaut son défaut). S'il n'y
     a aucun params.json, le script s'arrête avec une erreur (code de sortie 1).
 
     Paramètres

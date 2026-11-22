@@ -7,9 +7,7 @@ la frontale, sur le dossier d'un run lancé avec --historique.
 Entrée : out/<run>/historique/grille_<pas>.npz, une grille tous les
 PAS_ENTRE_SAUVEGARDES pas, stockée en deux matrices binaires compactées et
 compressées "jaune" et "noir" (voir sauvegarder_run dans simulation.py).
-Le réseau du run est lu dans out/<run>/params.json (carré si absent) : les
-grilles d'un run sur réseau hexagonal sont dessinées en briques, comme
-grille.png (vers_image et aspect du réseau, RESEAUX dans simulation.py).
+Un run sur réseau hexagonal est dessiné en briques, comme grille.png.
 
 Sorties, écrites dans le dossier du run :
   - timeline.gif : animation de la grille au cours du temps ;
@@ -93,20 +91,7 @@ def lister_instantanes(dossier):
 
 
 def lire_reseau(dossier):
-    """
-    Lit le réseau du run dans dossier/params.json.
-
-    Paramètres
-    ----------
-    dossier : Path
-        Dossier du run.
-
-    Renvoie
-    -------
-    reseau : dict
-        RESEAUX[params["reseau"]] de simulation.py ; le réseau carré pour un
-        run lancé avant l'option --reseau.
-    """
+    """Réseau du run (RESEAUX de simulation.py), lu dans params.json ; carré pour un ancien run."""
     with open(dossier / "params.json") as f:
         infos = json.load(f)
     return RESEAUX[infos.get("reseau", "carre")]
@@ -159,13 +144,12 @@ def en_couleurs(grilles):
 
     Paramètres
     ----------
-    grilles : np.ndarray, forme (n, H, W)
-        Grilles de VIDE, JAUNE et NOIR, déjà passées par vers_image du
-        réseau : (n, L, L) sur le réseau carré, (n, L, 2L) en hexagonal.
+    grilles : np.ndarray, forme (n, L, L), ou (n, L, 2L) en hexagonal
+        Grilles de VIDE, JAUNE et NOIR (après vers_image du réseau).
 
     Renvoie
     -------
-    images : np.ndarray uint8, forme (n, H, W, 3)
+    images : np.ndarray uint8, même forme plus 3 couleurs
         Images RGB.
     """
     # Une couleur RGB par état, dans l'ordre VIDE, JAUNE, NOIR
@@ -181,7 +165,7 @@ def creer_gif(images, temps, chemin, fps, aspect=1.0):
 
     Paramètres
     ----------
-    images : np.ndarray uint8, forme (n, H, W, 3)
+    images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB, dans l'ordre du temps.
     temps : np.ndarray, forme (n,)
         Temps t = pas / L² de chaque image.
@@ -190,8 +174,7 @@ def creer_gif(images, temps, chemin, fps, aspect=1.0):
     fps : int
         Images par seconde.
     aspect : float
-        Rapport hauteur / largeur d'un pixel, celui du réseau (1 en carré,
-        √3 en hexagonal).
+        Aspect des pixels : 1 en carré, √3 en hexagonal.
     """
     fig = plt.figure(figsize=(5, 5))
     image = plt.imshow(images[0], interpolation="nearest", aspect=aspect)
@@ -218,7 +201,7 @@ def creer_planche(images, temps, chemin, n_images, aspect=1.0):
 
     Paramètres
     ----------
-    images : np.ndarray uint8, forme (n, H, W, 3)
+    images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB, dans l'ordre du temps.
     temps : np.ndarray, forme (n,)
         Temps t = pas de chaque image.
@@ -227,7 +210,7 @@ def creer_planche(images, temps, chemin, n_images, aspect=1.0):
     n_images : int
         Nombre d'instants affichés (au plus n).
     aspect : float
-        Rapport hauteur / largeur d'un pixel, celui du réseau.
+        Aspect des pixels : 1 en carré, √3 en hexagonal.
     """
     # Indices de n_images instants régulièrement espacés, premier et dernier inclus
     n = min(n_images, len(images))

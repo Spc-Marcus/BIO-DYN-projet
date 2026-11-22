@@ -10,7 +10,7 @@ Code du projet : un run Monte Carlo (`simulation.py`), la timeline d'un run (`ti
 
 | Fichier | Rôle |
 |---|---|
-| `simulation.py` | Un run Monte Carlo : paramètres et options du modèle, simulation, sauvegarde et reprise |
+| `simulation.py` | Un run Monte Carlo : paramètres, simulation, sauvegarde et reprise |
 | `timeline.py` | GIF et planche « timeline » d'un run lancé avec `--historique` (indépendant de Slurm) |
 | `slurm_pipeline/` | Lancement sur GenOuest en Job Array : scripts, [README](slurm_pipeline/README.md) et documentation avec diagrammes dans [slurm_pipeline/doc/](slurm_pipeline/doc/) |
 
@@ -27,30 +27,19 @@ Le run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L50_h8_lX2.5
 
 ## Options du modèle
 
-Les règles (2) à (8) de l'article sont rangées dans un dictionnaire règle → taux construit à partir des options ; seules les règles de taux non nul sont tirées. Trois extensions s'y ajoutent : la blessure (règle (9)), la naissance au contact et le réseau hexagonal. Avec les valeurs par défaut, on retrouve le modèle de l'article et exactement les mêmes grilles qu'avant ces options.
+Les règles sont dans un dictionnaire règle → taux construit à partir des options (`--bX`, `--bM`, `--dX`, `--dM`, `--s`, `--lX`, `--lB`) ; seules les règles de taux non nul sont tirées. Par défaut, c'est le modèle de l'article. Trois extensions, désactivées par défaut :
 
-| Option | Défaut | Suffixe du dossier (si ≠ défaut) | Rôle |
-|---|---|---|---|
-| `--bX`, `--bM` | 1, 0 | `_bX…`, `_bM…` | taux de naissance spontanée du jaune (2), du noir (3) |
-| `--dX`, `--dM` | 0, 0 | `_dX…`, `_dM…` | taux de mort du jaune (4), du noir (5) |
-| `--s` | 1 | `_s…` | taux d'élimination entre voisins (6) et (7) |
-| `--reseau {carre, hex}` | `carre` | `_hex` | réseau carré (4 voisins) ou hexagonal (6 voisins, image en briques) |
-| `--contact` | désactivé | `_c` | naissances (2), (3) et (8) seulement si un voisin direct est occupé ; demande `--rho0` > 0 |
-| `--rho0` | 0 | `_r…` | fraction de cases occupées au départ |
-| `--fX0` | 1 | `_fx…` (si `rho0` > 0) | part de jaunes parmi ces cases |
-| `--lB` | 0 | `_B…` | taux de la blessure (9) : la case tirée et toutes celles à distance ≤ R deviennent vides |
-| `--alpha` | 1 | `_a…` (s'il y a une blessure) | rayon de la blessure R = alpha·h |
-| `--tB` | aucun | `_tB…` | une seule blessure au centre au temps tB, grille d'avant gardée dans `grille_avant_blessure.npy` |
+| Options | Défaut | Rôle |
+|---|---|---|
+| `--reseau hex` | `carre` | réseau hexagonal (6 voisins), image en briques |
+| `--contact`, `--rho0`, `--fX0` | non, 0, 1 | naissances seulement au contact d'une case occupée, en partant d'une fraction `rho0` de cases occupées (dont une part `fX0` de jaunes) |
+| `--lB`, `--alpha`, `--tB` | 0, 1, aucun | blessure (9) de taux `lB` et de rayon `alpha·h` ; avec `--tB`, une seule blessure au centre au temps `tB` |
 
-Par exemple :
+Chaque option différente de son défaut ajoute un suffixe au dossier du run :
 
 ```bash
-python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --reseau hex            # out/L50_h8_lX2.5_b0_g0_hex
-python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --contact --rho0 0.01   # out/L50_h8_lX2.5_b0_g0_c_r0.01
-python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --tB 1000 --alpha 0.5   # out/L50_h8_lX2.5_b0_g0_a0.5_tB1000.0
+python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --reseau hex --contact --rho0 0.01   # out/L50_h8_lX2.5_b0_g0_hex_c_r0.01
 ```
-
-Un run repris doit avoir les mêmes paramètres que ceux sauvegardés dans son `params.json` (sauf `n_pas` et `--historique`) : sinon `simulation.py` s'arrête avec un message d'erreur. `lambda_fft` (dans `simulation.py`) mesure la longueur d'onde d'une grille, sur les deux réseaux.
 
 ## Lancer sur GenOuest
 
