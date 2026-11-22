@@ -94,11 +94,11 @@ S = 1.0    # élimination entre voisins de couleurs différentes
 #    nom_dossier) ; un run sauvegardé avant l'ajout d'une option est relu
 #    avec la valeur par défaut de cette option.
 DEFAUTS = {
-    "bX": BX,    # (2) naissance spontanée du jaune
-    "bM": 0.0,   # (3) naissance spontanée du noir
-    "dX": 0.0,   # (4) mort du jaune
-    "dM": 0.0,   # (5) mort du noir
-    "s": S,      # (6) et (7) élimination entre voisins, sX = sM = s
+    "bX": BX,           # (2) naissance spontanée du jaune
+    "bM": 0.0,          # (3) naissance spontanée du noir
+    "dX": 0.0,          # (4) mort du jaune
+    "dM": 0.0,          # (5) mort du noir
+    "s": S,             # (6) et (7) élimination entre voisins, sX = sM = s
     "reseau": "carre",  # réseau carré (4 voisins) ou hexagonal (6 voisins), voir RESEAUX
     "contact": False,   # naissances seulement au contact d'une case occupée
     "rho0": 0.0,        # fraction de cases occupées au départ
@@ -208,13 +208,13 @@ def nom_dossier(params):
     Construit le nom du dossier du run.
 
     out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}, suivi d'un suffixe par option
-    du modèle différente de sa valeur par défaut (DEFAUTS) : _bX{bX},
-    _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux, _hex pour le réseau
-    hexagonal, _c pour --contact,
-    _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ, _B{lB}, _a{alpha}
-    (s'il y a une blessure) et _tB{tB} pour la blessure. Avec les options
-    par défaut, c'est le nom des runs lancés avant ces options : ils sont
-    retrouvés et repris.
+    du modèle différente de sa valeur par défaut (DEFAUTS), dans cet ordre :
+      - _bX{bX}, _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux ;
+      - _hex pour le réseau hexagonal ;
+      - _c pour --contact, _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ ;
+      - _B{lB}, _a{alpha} (s'il y a une blessure) et _tB{tB} pour la blessure.
+    Avec les options par défaut, c'est le nom des runs lancés avant ces
+    options : ils sont retrouvés et repris.
 
     Paramètres
     ----------
@@ -945,9 +945,9 @@ def simulation_peau(grille, params, pas_faits, rng):
     possible. Avec --tB, au pas round(tB L²) et avant ce tirage, la
     blessure unique au centre (blessure_unique) : la boucle reprenant à
     pas_faits, elle n'est faite qu'une fois, même si le run est repris ou
-    prolongé. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est
-    sauvegardé avec sauvegarder_run pour pouvoir être relancé, sauf au
-    dernier pas : la sauvegarde finale est faite par le programme principal.
+    prolongé. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé
+    avec sauvegarder_run pour pouvoir être relancé, sauf au dernier pas :
+    la sauvegarde finale est faite par le programme principal.
 
     Paramètres
     ----------
