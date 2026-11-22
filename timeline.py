@@ -7,6 +7,9 @@ la frontale, sur le dossier d'un run lancé avec --historique.
 Entrée : out/<run>/historique/grille_<pas>.npz, une grille tous les
 PAS_ENTRE_SAUVEGARDES pas, stockée en deux matrices binaires compactées et
 compressées "jaune" et "noir" (voir sauvegarder_run dans simulation.py).
+Le réseau du run est lu dans out/<run>/params.json (carré si absent) : les
+grilles d'un run sur réseau hexagonal sont dessinées en briques, comme
+grille.png (vers_image et aspect du réseau, RESEAUX dans simulation.py).
 
 Sorties, écrites dans le dossier du run :
   - timeline.gif : animation de la grille au cours du temps ;
@@ -14,7 +17,8 @@ Sorties, écrites dans le dossier du run :
                    le temps t = pas / L² sous chaque image.
 
 Dépendances : numpy et matplotlib (le GIF est écrit avec Pillow, installé
-avec matplotlib). Les couleurs et les états viennent de simulation.py.
+avec matplotlib). Les couleurs, les états et les réseaux viennent de
+simulation.py.
 
 Utilisation :
     python timeline.py out/L100_h16_lX2.5_b0_g0
@@ -22,6 +26,7 @@ Utilisation :
 """
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +36,7 @@ import matplotlib.pyplot as plt
 from matplotlib import animation
 from matplotlib.colors import to_rgb
 
-from simulation import VIDE, JAUNE, NOIR, COULEURS
+from simulation import VIDE, JAUNE, NOIR, COULEURS, RESEAUX
 
 
 def lire_arguments():
@@ -87,6 +92,26 @@ def lister_instantanes(dossier):
     return instantanes
 
 
+def lire_reseau(dossier):
+    """
+    Lit le réseau du run dans dossier/params.json.
+
+    Paramètres
+    ----------
+    dossier : Path
+        Dossier du run.
+
+    Renvoie
+    -------
+    reseau : dict
+        RESEAUX[params["reseau"]] de simulation.py ; le réseau carré pour un
+        run lancé avant l'option --reseau.
+    """
+    with open(dossier / "params.json") as f:
+        infos = json.load(f)
+    return RESEAUX[infos.get("reseau", "carre")]
+
+
 def charger_instantanes(instantanes):
     """
     Charge les grilles listées par lister_instantanes.
@@ -134,12 +159,13 @@ def en_couleurs(grilles):
 
     Paramètres
     ----------
-    grilles : np.ndarray, forme (n, L, L)
-        Grilles de VIDE, JAUNE et NOIR.
+    grilles : np.ndarray, forme (n, H, W)
+        Grilles de VIDE, JAUNE et NOIR, déjà passées par vers_image du
+        réseau : (n, L, L) sur le réseau carré, (n, L, 2L) en hexagonal.
 
     Renvoie
     -------
-    images : np.ndarray uint8, forme (n, L, L, 3)
+    images : np.ndarray uint8, forme (n, H, W, 3)
         Images RGB.
     """
     # Une couleur RGB par état, dans l'ordre VIDE, JAUNE, NOIR
@@ -147,7 +173,7 @@ def en_couleurs(grilles):
     return palette[grilles]
 
 
-def creer_gif(images, temps, chemin, fps):
+def creer_gif(images, temps, chemin, fps, aspect=1.0):
     """
     Écrit l'animation des images, avec le temps t en titre de chaque image
     (arrondi à l'unité). Une image du GIF par grille de l'historique,
@@ -155,7 +181,7 @@ def creer_gif(images, temps, chemin, fps):
 
     Paramètres
     ----------
-    images : np.ndarray uint8, forme (n, L, L, 3)
+    images : np.ndarray uint8, forme (n, H, W, 3)
         Images RGB, dans l'ordre du temps.
     temps : np.ndarray, forme (n,)
         Temps t = pas / L² de chaque image.
@@ -163,9 +189,12 @@ def creer_gif(images, temps, chemin, fps):
         Fichier GIF à écrire.
     fps : int
         Images par seconde.
+    aspect : float
+        Rapport hauteur / largeur d'un pixel, celui du réseau (1 en carré,
+        √3 en hexagonal).
     """
     fig = plt.figure(figsize=(5, 5))
-    image = plt.imshow(images[0], interpolation="nearest")
+    image = plt.imshow(images[0], interpolation="nearest", aspect=aspect)
     titre = plt.title(f"t = {temps[0]:.0f}")
     plt.axis("off")
 
@@ -180,7 +209,7 @@ def creer_gif(images, temps, chemin, fps):
     plt.close(fig)
 
 
-def creer_planche(images, temps, chemin, n_images):
+def creer_planche(images, temps, chemin, n_images, aspect=1.0):
     """
     Écrit une planche de n_images instants régulièrement espacés, du premier
     au dernier, côte à côte, avec le temps t sous chaque image. Les indices
@@ -189,7 +218,7 @@ def creer_planche(images, temps, chemin, n_images):
 
     Paramètres
     ----------
-    images : np.ndarray uint8, forme (n, L, L, 3)
+    images : np.ndarray uint8, forme (n, H, W, 3)
         Images RGB, dans l'ordre du temps.
     temps : np.ndarray, forme (n,)
         Temps t = pas de chaque image.
@@ -197,6 +226,8 @@ def creer_planche(images, temps, chemin, n_images):
         Fichier PNG à écrire.
     n_images : int
         Nombre d'instants affichés (au plus n).
+    aspect : float
+        Rapport hauteur / largeur d'un pixel, celui du réseau.
     """
     # Indices de n_images instants régulièrement espacés, premier et dernier inclus
     n = min(n_images, len(images))
@@ -204,7 +235,7 @@ def creer_planche(images, temps, chemin, n_images):
 
     fig, axes = plt.subplots(1, len(indices), figsize=(2.5 * len(indices), 3), squeeze=False)
     for ax, k in zip(axes[0], indices):
-        ax.imshow(images[k], interpolation="nearest")
+        ax.imshow(images[k], interpolation="nearest", aspect=aspect)
         ax.set_xlabel(f"t = {temps[k]:.0f}")
         ax.set_xticks([])
         ax.set_yticks([])
@@ -221,10 +252,11 @@ if __name__ == "__main__":
     temps = pas 
     print(f"{len(pas)} instantanés, de t = {temps[0]} à t = {temps[-1]}")
 
-    # 2. Images en couleurs
-    images = en_couleurs(grilles)
+    # 2. Images en couleurs, dessinées sur le réseau du run (briques en hexagonal)
+    reseau = lire_reseau(dossier)
+    images = en_couleurs(np.array([reseau["vers_image"](g) for g in grilles]))
 
     # 3. GIF et planche, dans le dossier du run
-    creer_gif(images, temps, dossier / "timeline.gif", args.fps)
-    creer_planche(images, temps, dossier / "timeline.png", args.n_images)
+    creer_gif(images, temps, dossier / "timeline.gif", args.fps, reseau["aspect"])
+    creer_planche(images, temps, dossier / "timeline.png", args.n_images, reseau["aspect"])
     print(f"Écrits : {dossier / 'timeline.gif'} et {dossier / 'timeline.png'}")

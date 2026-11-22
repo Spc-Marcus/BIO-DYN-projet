@@ -163,7 +163,7 @@ out/L100_h15_lX2.5_b0_g0/
 
 (Plus un dossier `historique/` si le run est lancé avec `--historique`, voir section 9.)
 
-`params.json` contient les paramètres, `pas_faits`, le temps `t = pas_faits / L²` et l'état du générateur aléatoire (module `random`, 625 entiers), pour qu'une reprise continue exactement la même suite de tirages. Pour un run terminé :
+`params.json` contient les paramètres (dont les options du modèle, ici à leur valeur par défaut), `pas_faits`, le temps `t = pas_faits / L²` et l'état du générateur aléatoire (module `random`, 625 entiers), pour qu'une reprise continue exactement la même suite de tirages. Pour un run terminé :
 
 ```json
 {
@@ -174,6 +174,18 @@ out/L100_h15_lX2.5_b0_g0/
   "n_pas": 1000000000,
   "graine": 0,
   "historique": false,
+  "bX": 1.0,
+  "bM": 0.0,
+  "dX": 0.0,
+  "dM": 0.0,
+  "s": 1.0,
+  "reseau": "carre",
+  "contact": false,
+  "rho0": 0.0,
+  "fX0": 1.0,
+  "lB": 0.0,
+  "alpha": 1.0,
+  "tB": null,
   "sortie": "out/L100_h15_lX2.5_b0_g0",
   "pas_faits": 1000000000,
   "t": 100000.0,
@@ -226,13 +238,15 @@ python slurm_pipeline/04_merge_results.py
 `results/final_runs.csv`, une ligne par run, triée par h, lX, bande puis graine (extrait) :
 
 ```
-L,h,lX,bande,graine,n_pas,pas_faits,t,termine,dossier
-100,5,0.5,0,0,1000000000,1000000000,100000.0,True,L100_h5_lX0.5_b0_g0
-100,5,0.5,0,1,1000000000,1000000000,100000.0,True,L100_h5_lX0.5_b0_g1
-100,5,1.5,0,0,1000000000,1000000000,100000.0,True,L100_h5_lX1.5_b0_g0
+L,h,lX,bande,graine,bX,bM,dX,dM,s,reseau,contact,rho0,fX0,lB,alpha,tB,n_pas,pas_faits,t,termine,dossier
+100,5,0.5,0,0,1.0,0.0,0.0,0.0,1.0,carre,False,0.0,1.0,0.0,1.0,,1000000000,1000000000,100000.0,True,L100_h5_lX0.5_b0_g0
+100,5,0.5,0,1,1.0,0.0,0.0,0.0,1.0,carre,False,0.0,1.0,0.0,1.0,,1000000000,1000000000,100000.0,True,L100_h5_lX0.5_b0_g1
+100,5,1.5,0,0,1.0,0.0,0.0,0.0,1.0,carre,False,0.0,1.0,0.0,1.0,,1000000000,1000000000,100000.0,True,L100_h5_lX1.5_b0_g0
 …
-100,15,3.5,0,1,1000000000,1000000000,100000.0,True,L100_h15_lX3.5_b0_g1
+100,15,3.5,0,1,1.0,0.0,0.0,0.0,1.0,carre,False,0.0,1.0,0.0,1.0,,1000000000,1000000000,100000.0,True,L100_h15_lX3.5_b0_g1
 ```
+
+Les colonnes `bX` à `tB` sont les options du modèle (section 10) ; `tB` est vide sans blessure unique. Un run lancé avant l'ajout de ces options y figure avec leurs valeurs par défaut.
 
 Un run avec `termine = False` est à relancer (section 5).
 
@@ -316,6 +330,45 @@ python timeline.py out/L100_h16_lX2.5_b0_g0
 
 `timeline.gif` montre la grille au cours du temps ; `timeline.png` met côte à côte 8 instants régulièrement espacés (options `--fps` et `--n_images`).
 
+## 10. Variante — options du modèle
+
+Les options de `simulation.py` (voir le README du projet : autres taux, réseau hexagonal, naissance au contact, blessure) se donnent à `01_prepare_chunks.sh` avec `--extra`, entre guillemets ; elles valent pour tous les runs. Par exemple, réseau hexagonal et naissances au contact, en partant de 1 % de cases jaunes :
+
+```bash
+bash slurm_pipeline/01_prepare_chunks.sh --L 100 \
+    --h-start 16 --h-end 16 --lx-start 2.5 --lx-end 2.5 --graines 2 \
+    --extra "--reseau hex --contact --rho0 0.01"
+bash slurm_pipeline/03_submit_all.sh
+```
+
+Sortie de la préparation :
+
+```
+[LOG: Nettoyage] Suppression de /scratch/<login>/BIO-DYN-projet/params_chunks
+[LOG: Préparation] L=100 h=[16..16/1] lX=[2.5..2.5/0.1] bande=[0..0/1] graines=2 n_pas=1000000000 options=--reseau hex --contact --rho0 0.01
+[LOG: Préparation] 2 run(s) → 1 chunk(s) de 10 max
+[LOG: Chunk 1] 2 run(s) → /scratch/<login>/BIO-DYN-projet/params_chunks/chunk_1.txt
+[LOG: Terminé] 1 chunk(s) créé(s) dans /scratch/<login>/BIO-DYN-projet/params_chunks
+Utilisez --array=1-1 dans vos jobs Slurm.
+1
+```
+
+Les options sont recopiées en fin de ligne dans `params_chunks/chunk_1.txt` :
+
+```
+100 16 2.5 0 0 1000000000 --reseau hex --contact --rho0 0.01
+100 16 2.5 0 1 1000000000 --reseau hex --contact --rho0 0.01
+```
+
+`02_run_worker.slurm` les passe telles quelles à `simulation.py` et les écrit dans le journal :
+
+```
+[LOG: Run] L=100 h=16 lX=2.5 bande=0 graine=0 n_pas=1000000000 options=--reseau hex --contact --rho0 0.01
+Run out/L100_h16_lX2.5_b0_g0_hex_c_r0.01 : 0 / 1000000000 pas déjà faits
+```
+
+Chaque option différente de sa valeur par défaut ajoute un suffixe au dossier du run (`_hex`, `_c`, `_r0.01`) : ces runs ne se mélangent pas avec ceux du modèle de l'article, et `04_merge_results.py` donne leurs options dans le CSV. Avec `--tB`, le run garde en plus la grille d'avant la blessure dans `grille_avant_blessure.npy`. Pour reprendre ou prolonger ces runs, refaire l'étape 1 avec le même `--extra`.
+
 ## Récapitulatif
 
 ```bash
@@ -326,4 +379,6 @@ bash slurm_pipeline/03_submit_all.sh                                          # 
 squeue -u $USER                                                               # suivi
 conda activate biodyn && python slurm_pipeline/04_merge_results.py           # étape 3
 python timeline.py out/L100_h16_lX2.5_b0_g0                                    # GIF d'un run lancé avec --historique
+bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
+    --lx-start 2.5 --lx-end 2.5 --extra "--reseau hex"                       # options du modèle (section 10)
 ```

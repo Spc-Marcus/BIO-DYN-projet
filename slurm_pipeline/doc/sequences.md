@@ -37,7 +37,7 @@ sequenceDiagram
             Slurm->>Worker: démarre la tâche N sur un nœud
             Worker->>FS: lit params_chunks/chunk_N.txt
             loop pour chaque ligne du chunk
-                Worker->>Sim: python simulation.py --L --h --lX --bande --graine --n_pas
+                Worker->>Sim: python simulation.py --L --h --lX --bande --graine --n_pas [options]
                 Sim->>FS: sauvegardes régulières dans out/run/
                 Sim-->>Worker: code de sortie
             end

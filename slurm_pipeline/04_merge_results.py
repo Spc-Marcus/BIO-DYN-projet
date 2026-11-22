@@ -5,12 +5,16 @@ Usage (depuis la racine du projet) :
     python slurm_pipeline/04_merge_results.py [--out-dir out] [--output results/final_runs.csv]
 
 Entrées : les params.json écrits par simulation.py, un par dossier de run
-(out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/).
+(out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/, suivi d'un suffixe par option du
+modèle différente de sa valeur par défaut).
 
 Sortie : une ligne par run, avec les colonnes
-    L, h, lX, bande, graine, n_pas, pas_faits, t, termine, dossier
+    L, h, lX, bande, graine, bX, bM, dX, dM, s, reseau, contact, rho0, fX0,
+    lB, alpha, tB, n_pas, pas_faits, t, termine, dossier
 où termine vaut True si pas_faits >= n_pas. Les runs non terminés sont à
-relancer avec 03_submit_all.sh.
+relancer avec 03_submit_all.sh. Les options du modèle (bX à tB) absentes
+d'un params.json, pour un run lancé avant leur ajout, prennent leur valeur
+par défaut (DEFAUTS).
 """
 
 import argparse
@@ -31,7 +35,12 @@ SCRIPT_DIR   = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 OUT_DIR      = PROJECT_ROOT / "out"
 OUTPUT_PATH  = PROJECT_ROOT / "results" / "final_runs.csv"
-COLUMNS = ["L", "h", "lX", "bande", "graine", "n_pas", "pas_faits", "t", "termine", "dossier"]
+COLUMNS = ["L", "h", "lX", "bande", "graine", "bX", "bM", "dX", "dM", "s", "reseau", "contact", "rho0", "fX0",
+           "lB", "alpha", "tB", "n_pas", "pas_faits", "t", "termine", "dossier"]
+
+# Valeurs par défaut des options du modèle, les mêmes que DEFAUTS dans simulation.py
+DEFAUTS = {"bX": 1.0, "bM": 0.0, "dX": 0.0, "dM": 0.0, "s": 1.0, "reseau": "carre", "contact": False,
+           "rho0": 0.0, "fX0": 1.0, "lB": 0.0, "alpha": 1.0, "tB": None}
 
 
 def lire_arguments():
@@ -55,8 +64,9 @@ def charger_runs(out_dir):
     out_dir/<run>/params.json).
 
     Un fichier illisible, ou auquel il manque une colonne, est signalé dans
-    le log et ignoré. S'il n'y a aucun params.json, le script s'arrête avec
-    une erreur (code de sortie 1).
+    le log et ignoré ; une option du modèle absente (run lancé avant son
+    ajout) prend sa valeur par défaut, sans que le run soit ignoré. S'il n'y
+    a aucun params.json, le script s'arrête avec une erreur (code de sortie 1).
 
     Paramètres
     ----------
@@ -80,7 +90,8 @@ def charger_runs(out_dir):
         try:
             with open(f) as fichier:
                 infos = json.load(fichier)
-            run = {c: infos[c] for c in COLUMNS if c not in ("termine", "dossier")}
+            run = {c: infos[c] for c in COLUMNS if c not in ("termine", "dossier") and c not in DEFAUTS}
+            run.update({c: infos.get(c, defaut) for c, defaut in DEFAUTS.items()})
         except (OSError, ValueError, KeyError) as e:
             logger.warning(f"  ✗ Lecture impossible : {f} — {e}")
             continue

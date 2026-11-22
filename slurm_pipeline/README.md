@@ -1,6 +1,6 @@
 # Pipeline Slurm — BIO-DYN-projet
 
-Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le cluster Genouest, en balayant les paramètres **h**, **lX** et la largeur de la **bande d'iridophores** (et plusieurs graines).
+Architecture Scatter-Gather pour lancer les simulations Monte Carlo sur le cluster Genouest, en balayant les paramètres **h**, **lX** et la largeur de la **bande d'iridophores** (et plusieurs graines), avec éventuellement des **options du modèle** communes à tous les runs (réseau hexagonal, naissance au contact, blessure, autres taux).
 
 ## Prérequis
 
@@ -48,9 +48,13 @@ bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
 # Avec iridophores (Fig. 1b–c) : bandes de 1 et 10 lignes
 bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
     --lx-start 2.5 --lx-end 2.5 --bande-start 1 --bande-end 10 --bande-step 9
+
+# Options du modèle pour tous les runs (voir le README du projet), ici le réseau hexagonal
+bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 16 --h-end 16 \
+    --lx-start 2.5 --lx-end 2.5 --extra "--reseau hex"
 ```
 
-Crée `params_chunks/chunk_1.txt`, `chunk_2.txt`, … : une ligne `L h lX bande graine n_pas` par run.
+Crée `params_chunks/chunk_1.txt`, `chunk_2.txt`, … : une ligne `L h lX bande graine n_pas [options]` par run, les options de `--extra` en fin de ligne.
 La taille des chunks est configurable via `CHUNK_SIZE=10` en tête du script.
 
 **Options :**
@@ -69,6 +73,7 @@ La taille des chunks est configurable via `CHUNK_SIZE=10` en tête du script.
 | `--bande-step` | `1` | Pas du balayage de la bande. |
 | `--graines` | `3` | Nombre de répétitions (graines 0 à N-1). |
 | `--n-pas` | `100000 × L²` | Nombre de pas par run. |
+| `--extra` | aucune | Options de `simulation.py` ajoutées à tous les runs, entre guillemets, par exemple `--extra "--contact --rho0 0.01"`. Chaque option différente de sa valeur par défaut ajoute un suffixe au dossier du run. |
 
 ### Étape 2 — Soumettre les jobs
 
@@ -92,7 +97,7 @@ python slurm_pipeline/04_merge_results.py
 # options : --out-dir DOSSIER  --output CSV
 ```
 
-Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine, n_pas, pas_faits, t, termine, dossier`). Les runs avec `termine = False` sont à relancer (étape 2).
+Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine`, les options du modèle `bX, bM, dX, dM, s, reseau, contact, rho0, fX0, lB, alpha, tB`, puis `n_pas, pas_faits, t, termine, dossier`). Un run lancé avant l'ajout des options y figure avec leurs valeurs par défaut. Les runs avec `termine = False` sont à relancer (étape 2).
 
 ---
 
@@ -117,15 +122,16 @@ Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine, 
 
 ```
 params_chunks/
-├── chunk_1.txt                            # une ligne "L h lX bande graine n_pas" par run
+├── chunk_1.txt                            # une ligne "L h lX bande graine n_pas [options]" par run
 └── ...
 
 out/
-└── L200_h2_lX1.1_b0_g0/                   # un dossier par run (simulation.py)
-    ├── grille.npy
-    ├── params.json
-    ├── grille.png
-    └── historique/                        # avec --historique : grille_<pas>.npz à chaque sauvegarde
+├── L200_h2_lX1.1_b0_g0/                   # un dossier par run (simulation.py)
+│   ├── grille.npy
+│   ├── params.json
+│   ├── grille.png
+│   └── historique/                        # avec --historique : grille_<pas>.npz à chaque sauvegarde
+└── L200_h2_lX1.1_b0_g0_hex_c_r0.01/       # même run avec --extra "--reseau hex --contact --rho0 0.01"
 
 results/
 └── final_runs.csv                         # paramètres et état de tous les runs (étape 3)

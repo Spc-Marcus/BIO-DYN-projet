@@ -7,7 +7,7 @@ Composants du pipeline, fichiers qu'ils lisent et écrivent, et découpage du tr
 ```mermaid
 graph TD
     subgraph Etape1["Étape 1 — Préparation (frontale)"]
-        P1(["01_prepare_chunks.sh<br/>plages h, lX, bande, graines"])
+        P1(["01_prepare_chunks.sh<br/>plages h, lX, bande, graines<br/>options du modèle (--extra)"])
         C1[("params_chunks/chunk_1.txt")]
         C2[("params_chunks/chunk_2.txt")]
         CN[("params_chunks/chunk_N.txt")]
@@ -27,7 +27,7 @@ graph TD
     end
 
     subgraph Sorties["Sorties"]
-        OUT[("out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/<br/>grille.npy · params.json · grille.png<br/>historique/ si --historique")]
+        OUT[("out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}[_options]/<br/>grille.npy · params.json · grille.png<br/>historique/ si --historique")]
         LOGS[("logs/slurm_JOBID_TASKID.out")]
     end
 
@@ -55,10 +55,10 @@ graph TD
 
 | Fichier | Où il tourne | Rôle |
 |---|---|---|
-| `01_prepare_chunks.sh` | frontale | Génère une ligne `L h lX bande graine n_pas` par run et les répartit en chunks de `CHUNK_SIZE` lignes |
+| `01_prepare_chunks.sh` | frontale | Génère une ligne `L h lX bande graine n_pas [options]` par run et les répartit en chunks de `CHUNK_SIZE` lignes |
 | `03_submit_all.sh` | frontale | Compte les chunks et soumet un seul Job Array, une tâche par chunk |
-| `02_run_worker.slurm` | nœud de calcul | Lance l'un après l'autre les runs de son chunk |
-| `simulation.py` | nœud de calcul | Un run : simulation, sauvegarde régulière, reprise |
+| `02_run_worker.slurm` | nœud de calcul | Lance l'un après l'autre les runs de son chunk, options du modèle comprises |
+| `simulation.py` | nœud de calcul | Un run : règles actives et options du modèle, simulation, sauvegarde régulière, reprise |
 | `04_merge_results.py` | frontale | Rassemble les `params.json` de tous les runs dans un CSV |
 | `timeline.py` (racine) | frontale ou en local | GIF et planche d'un run lancé avec `--historique` |
 
@@ -92,40 +92,49 @@ Ordre des lignes : h varie le plus lentement, puis lX, puis bande, puis la grain
 
 ## 3. Un run : `simulation.py`
 
-`simulation.py` ne connaît pas Slurm : il reçoit les paramètres d'un run en ligne de commande, ce qui permet aussi de le lancer à la main en local.
+`simulation.py` ne connaît pas Slurm : il reçoit les paramètres d'un run en ligne de commande, ce qui permet aussi de le lancer à la main en local. Les règles sont dans un dictionnaire règle → probabilité construit à partir des options (`regles_actives`, règles de taux non nul seulement), et chaque règle est appliquée par sa fonction (table `ACTIONS`).
 
 ```mermaid
 flowchart TD
-    A["lire_arguments<br/>L, h, lX, bande, graine, n_pas"]
+    A["lire_arguments<br/>L, h, lX, bande, graine, n_pas<br/>options du modèle"]
 
     subgraph Prep["preparer_run"]
         B{"out/run/params.json<br/>existe ?"}
-        C["nouveau run<br/>initialiser_grille, générateur créé depuis la graine"]
+        C["nouveau run<br/>générateur créé depuis la graine, initialiser_grille"]
         D["charger_run<br/>grille, pas_faits, état du générateur"]
+        V{"mêmes paramètres que<br/>la ligne de commande ?"}
         B -->|"non"| C
-        B -->|"oui"| D
+        B -->|"oui"| D --> V
     end
 
+    ER(["Erreur : run sauvegardé avec d'autres paramètres"])
     E{"pas_faits ≥ n_pas ?"}
     Z(["Run déjà terminé, rien à faire"])
 
     subgraph Boucle["simulation_peau"]
-        MK["masque_iridophores(L, bande)"]
+        MK["modele : masque_iridophores, réseau, disque<br/>regles_actives : règle → probabilité"]
+        BU{"pas = round(tB L²) ?"}
+        BL["blessure_unique<br/>grille_avant_blessure.npy"]
         T["tirer une case (i, j)<br/>tirer_regle"]
-        AP["appliquer_regle<br/>voisin_au_hasard, case_a_distance, masque"]
+        AP["appliquer_regle<br/>fonction de la règle dans ACTIONS"]
         SV{"PAS_ENTRE_SAUVEGARDES<br/>pas depuis la dernière sauvegarde ?"}
         SR["sauvegarder_run"]
         FIN{"pas_faits < n_pas ?"}
-        MK --> T --> AP --> SV
+        MK --> BU
+        BU -->|"oui"| BL --> T
+        BU -->|"non"| T
+        T --> AP --> SV
         SV -->|"oui"| SR --> FIN
         SV -->|"non"| FIN
-        FIN -->|"oui"| T
+        FIN -->|"oui"| BU
     end
 
     F["sauvegarder_run final"]
 
     A --> B
-    C & D --> E
+    V -->|"non"| ER
+    C --> E
+    V -->|"oui"| E
     E -->|"oui"| Z
     E -->|"non"| MK
     FIN -->|"non"| F
@@ -133,13 +142,13 @@ flowchart TD
 
 ## 4. Iridophores
 
-Les iridophores ne sont pas simulés comme des cellules : ils sont représentés par un masque de cases où le noir ne peut pas naître (`masque_iridophores` dans `simulation.py`). La règle (8) y est bloquée, ainsi que la règle (3) si bM devenait non nul.
+Les iridophores ne sont pas simulés comme des cellules : ils sont représentés par un masque de cases où le noir ne peut pas naître (`masque_iridophores` dans `simulation.py`). Les règles (3) (si `--bM` > 0) et (8) y sont bloquées ; la blessure ne touche pas au masque.
 
 ```mermaid
 flowchart LR
     BD["--bande N"] --> MK["masque_iridophores(L, bande)"]
     MK --> NI[("noir_interdit<br/>tableau L × L de booléens")]
-    NI --> AP["appliquer_regle<br/>règle (8) bloquée sur les cases True"]
+    NI --> AP["appliquer_regle<br/>règles (3) et (8) bloquées sur les cases True"]
 ```
 
 Aujourd'hui le masque est une bande horizontale de `bande` lignes au milieu de la grille (Fig. 1b–c), 0 = pas d'iridophores. Pour une autre forme, seule `masque_iridophores` est à modifier : le reste du code ne lit que le masque.
@@ -147,7 +156,7 @@ Aujourd'hui le masque est une bande horizontale de `bande` lignes au milieu de l
 ## Principes clés
 
 - **Une tâche = un chunk**, comme dans le pipeline de BenchQBR : le nombre de tâches reste faible même pour de gros balayages, et `MAX_CONCURRENT_CPU` limite le nombre de tâches simultanées.
-- **Un run = un dossier** `out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/`. Son nom ne dépend pas de `n_pas` : relancer avec un `n_pas` plus grand prolonge le run au lieu d'en créer un nouveau.
+- **Un run = un dossier** `out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}/`, suivi d'un suffixe par option du modèle différente de sa valeur par défaut (`_hex`, `_c`, `_r0.01`, …). Son nom ne dépend pas de `n_pas` : relancer avec un `n_pas` plus grand prolonge le run au lieu d'en créer un nouveau. Un dossier dont le `params.json` a d'autres paramètres que la ligne de commande n'est pas repris.
 - **Reprise automatique** : le run est sauvegardé tous les `PAS_ENTRE_SAUVEGARDES` pas, avec l'état du générateur aléatoire. Relancer `03_submit_all.sh` reprend les runs interrompus au dernier point sauvegardé et saute les runs terminés.
 - **Chemins relatifs à la racine du projet** : `03_submit_all.sh` passe `--chdir` à Slurm, les tâches écrivent donc toujours dans `out/` et `logs/` à la racine.
 - **Ne pas relancer `01_prepare_chunks.sh` tant que des tâches sont en attente** : il efface et réécrit `params_chunks/`, et chaque tâche ne lit son chunk qu'au moment où elle démarre.
