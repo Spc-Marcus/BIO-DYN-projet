@@ -14,6 +14,11 @@ nul y sont gardées, et chacune est appliquée par sa fonction (table
 ACTIONS). Par défaut les taux sont ceux de l'article : bM = dX = dM = 0 et
 sX = sM = s, il ne reste donc que les règles (2), (6), (7) et (8).
 
+Naissance au contact (--contact) : une case vide ne reçoit une naissance,
+règles (2'), (3') et (8'), que si au moins un de ses voisins directs est
+occupé. La peau part alors d'une fraction rho0 de cases occupées
+(--rho0, --fX0) au lieu d'être vide, sans quoi elle le resterait.
+
 Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
 masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
 bande horizontale de `bande` lignes (0 = pas d'iridophores) ; une autre
@@ -36,6 +41,7 @@ Utilisation :
     python simulation.py --h 16 --lX 2.5
     python simulation.py --h 16 --lX 2.5 --historique        # garde toutes les grilles
     python simulation.py --h 16 --lX 2.5 --dX 0.1 --dM 0.1   # morts naturelles (4) et (5)
+    python simulation.py --h 16 --lX 2.5 --contact --rho0 0.01   # naissances au contact
 """
 
 import argparse
@@ -79,6 +85,9 @@ DEFAUTS = {
     "dX": 0.0,   # (4) mort du jaune
     "dM": 0.0,   # (5) mort du noir
     "s": S,      # (6) et (7) élimination entre voisins, sX = sM = s
+    "contact": False,   # naissances seulement au contact d'une case occupée
+    "rho0": 0.0,        # fraction de cases occupées au départ
+    "fX0": 1.0,         # part de jaunes parmi ces cases
 }
 
 # 5. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
@@ -108,10 +117,17 @@ def lire_arguments():
       --historique  garde une copie de la grille à chaque sauvegarde
                 (désactivé par défaut) ;
       --bX, --bM, --dX, --dM, --s  taux des règles (2), (3), (4), (5), et
-                (6)-(7) (défauts 1, 0, 0, 0, 1 : ceux de l'article, DEFAUTS).
+                (6)-(7) (défauts 1, 0, 0, 0, 1 : ceux de l'article, DEFAUTS) ;
+      --contact naissances (2), (3) et (8) seulement si un voisin direct de
+                la case est occupé (désactivé par défaut) ;
+      --rho0    fraction de cases occupées au départ, entre 0 et 1
+                (défaut 0 = peau vide) ;
+      --fX0     part de jaunes parmi ces cases, le reste en noir, entre 0
+                et 1 (défaut 1 = que des jaunes).
 
-    Le programme s'arrête avec un message d'erreur si un taux est négatif
-    ou si tous les taux sont nuls.
+    Le programme s'arrête avec un message d'erreur si un taux est négatif,
+    si tous les taux sont nuls, si rho0 ou fX0 sort de [0, 1], ou si
+    --contact est donné sans rho0 > 0 (une peau vide le resterait).
 
     Renvoie
     -------
@@ -130,12 +146,21 @@ def lire_arguments():
     parser.add_argument("--dX", type=float, default=DEFAUTS["dX"], help="(4) mort du jaune")
     parser.add_argument("--dM", type=float, default=DEFAUTS["dM"], help="(5) mort du noir")
     parser.add_argument("--s", type=float, default=DEFAUTS["s"], help="(6) et (7) élimination entre voisins")
+    parser.add_argument("--contact", action="store_true", help="naissances seulement au contact d'une case occupée")
+    parser.add_argument("--rho0", type=float, default=DEFAUTS["rho0"], help="fraction de cases occupées au départ")
+    parser.add_argument("--fX0", type=float, default=DEFAUTS["fX0"], help="part de jaunes parmi ces cases")
     args = parser.parse_args()
 
-    # Taux positifs ou nuls, dont au moins un non nul
+    # 1. Taux positifs ou nuls, dont au moins un non nul
     taux = [args.bX, args.bM, args.dX, args.dM, args.s, args.lX]
     if min(taux) < 0 or max(taux) == 0:
         parser.error("les taux doivent être positifs ou nuls, et au moins un non nul")
+
+    # 2. Départ : des fractions, et des cases occupées s'il faut un contact pour naître
+    if not (0 <= args.rho0 <= 1 and 0 <= args.fX0 <= 1):
+        parser.error("--rho0 et --fX0 doivent être entre 0 et 1")
+    if args.contact and args.rho0 == 0:
+        parser.error("--contact demande --rho0 > 0 : sinon la peau vide le reste")
     return args
 
 
@@ -144,9 +169,10 @@ def nom_dossier(params):
     Construit le nom du dossier du run.
 
     out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}, suivi d'un suffixe par option
-    du modèle différente de sa valeur par défaut (DEFAUTS), dans l'ordre des
-    règles : _bX{bX}, _bM{bM}, _dX{dX}, _dM{dM}, _s{s}. Avec les options par
-    défaut, c'est le nom des runs lancés avant ces options : ils sont
+    du modèle différente de sa valeur par défaut (DEFAUTS) : _bX{bX},
+    _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux, _c pour --contact,
+    _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ. Avec les options
+    par défaut, c'est le nom des runs lancés avant ces options : ils sont
     retrouvés et repris.
 
     Paramètres
@@ -163,6 +189,12 @@ def nom_dossier(params):
     for cle in ("bX", "bM", "dX", "dM", "s"):
         if params[cle] != DEFAUTS[cle]:
             sortie += f"_{cle}{params[cle]}"
+    if params["contact"]:
+        sortie += "_c"
+    if params["rho0"] != DEFAUTS["rho0"]:
+        sortie += f"_r{params['rho0']}"
+        if params["fX0"] != DEFAUTS["fX0"]:
+            sortie += f"_fx{params['fX0']}"
     return sortie
 
 
@@ -172,8 +204,9 @@ def preparer_run(args):
 
     Le dossier du run est donné par nom_dossier ; il ne dépend ni de n_pas
     ni de historique.
-      - Pas de params.json dans ce dossier : nouveau run, grille vide,
-        générateur random.Random(graine), 0 pas effectué.
+      - Pas de params.json dans ce dossier : nouveau run, générateur
+        random.Random(graine), grille de départ initialiser_grille (vide si
+        rho0 = 0), 0 pas effectué.
       - Sinon : reprise, la grille, pas_faits et l'état du générateur sont
         récupérés avec charger_run. Les paramètres sauvegardés doivent être
         ceux de la ligne de commande, sauf n_pas et historique qui peuvent
@@ -191,9 +224,10 @@ def preparer_run(args):
     -------
     params : dict
         Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
-        celles de DEFAUTS ("bX", "bM", "dX", "dM", "s") et "sortie".
+        celles de DEFAUTS ("bX", "bM", "dX", "dM", "s", "contact", "rho0",
+        "fX0") et "sortie".
     grille : np.ndarray uint8, forme (L, L)
-        Grille de départ (vide, ou relue pour une reprise).
+        Grille de départ (initialiser_grille, ou relue pour une reprise).
     pas_faits : int
         Nombre de pas déjà effectués.
     rng : random.Random
@@ -219,6 +253,9 @@ def preparer_run(args):
         "dX": args.dX,
         "dM": args.dM,
         "s": args.s,
+        "contact": args.contact,
+        "rho0": args.rho0,
+        "fX0": args.fX0,
     }
     params["sortie"] = nom_dossier(params)
 
@@ -234,27 +271,44 @@ def preparer_run(args):
             raise SystemExit(f"Erreur : {params['sortie']} a été sauvegardé avec d'autres paramètres ({detail})")
         return params, grille, pas_faits, rng
 
-    # 3. Sinon nouveau run
-    grille = initialiser_grille(args.L)
+    # 3. Sinon nouveau run (le générateur d'abord : il tire les cases occupées au départ)
     rng = random.Random(args.graine)
+    grille = initialiser_grille(args.L, args.rho0, args.fX0, rng)
     return params, grille, 0, rng
 
 
-def initialiser_grille(L):
+def initialiser_grille(L, rho0, fX0, rng):
     """
-    Crée la grille de départ : peau entièrement vide.
+    Crée la grille de départ : peau vide, ou avec une fraction rho0 de cases
+    occupées.
+
+    Avec rho0 > 0 : n0 = max(1, round(rho0 L²)) cases tirées sans remise
+    (rng.sample, donc exactement n0), puis chacune JAUNE avec la
+    probabilité fX0, NOIR sinon. Avec rho0 = 0 rien n'est tiré : la suite
+    des tirages de la simulation est celle d'une peau vide.
 
     Paramètres
     ----------
     L : int
         Taille de la grille (L x L cases).
+    rho0 : float
+        Fraction de cases occupées au départ, entre 0 et 1.
+    fX0 : float
+        Part de jaunes parmi les cases occupées, entre 0 et 1.
+    rng : random.Random
+        Générateur aléatoire.
 
     Renvoie
     -------
     grille : np.ndarray uint8, forme (L, L)
-        Tableau rempli de VIDE.
+        Tableau de VIDE, avec n0 cases JAUNE ou NOIR si rho0 > 0.
     """
-    return np.full((L, L), VIDE, dtype=np.uint8)
+    grille = np.full((L, L), VIDE, dtype=np.uint8)
+    if rho0 > 0:
+        n0 = max(1, round(rho0 * L**2))
+        for c in rng.sample(range(L**2), n0):
+            grille[c // L, c % L] = JAUNE if rng.random() < fX0 else NOIR
+    return grille
 
 
 def masque_iridophores(L, bande):
@@ -390,6 +444,32 @@ def voisin_au_hasard(grille, i, j, voisins, rng):
     return grille[(i + di) % L, (j + dj) % L]
 
 
+def contact_ok(grille, i, j, voisins):
+    """
+    Dit si la case (i, j) touche une case occupée : au moins un de ses
+    voisins directs n'est pas VIDE (bords périodiques). Ne tire rien.
+    Utilisé par les naissances (2'), (3') et (8') avec --contact.
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+        État courant de la peau.
+    i, j : int
+        Coordonnées de la case.
+    voisins : tuple de (di, dj)
+        Décalages des voisins directs, RESEAUX[...]["voisins"].
+
+    Renvoie
+    -------
+    contact : bool
+    """
+    L = grille.shape[0]
+    for di, dj in voisins:
+        if grille[(i + di) % L, (j + dj) % L] != VIDE:
+            return True
+    return False
+
+
 def case_a_distance(grille, i, j, h, rng):
     """
     Renvoie l'état d'une case située à distance h de la case (i, j), sur le
@@ -455,16 +535,23 @@ RESEAUX = {
 
 
 def naissance_jaune(grille, i, j, modele, rng):
-    """(2) S_i -> X_i : la case doit être VIDE."""
-    if grille[i, j] == VIDE:
+    """
+    (2) S_i -> X_i : la case doit être VIDE. Avec --contact, (2') : elle
+    doit aussi toucher une case occupée.
+    """
+    if grille[i, j] == VIDE and (not modele["contact"] or contact_ok(grille, i, j, modele["voisins"])):
         grille[i, j] = JAUNE
         return True
     return False
 
 
 def naissance_noir(grille, i, j, modele, rng):
-    """(3) S_i -> M_i : la case doit être VIDE et hors iridophores."""
-    if grille[i, j] == VIDE and not modele["noir_interdit"][i, j]:
+    """
+    (3) S_i -> M_i : case VIDE et hors iridophores. Avec --contact, (3') :
+    elle doit aussi toucher une case occupée.
+    """
+    if (grille[i, j] == VIDE and not modele["noir_interdit"][i, j]
+            and (not modele["contact"] or contact_ok(grille, i, j, modele["voisins"]))):
         grille[i, j] = NOIR
         return True
     return False
@@ -505,9 +592,12 @@ def jaune_tue_noir(grille, i, j, modele, rng):
 def noir_nait_a_distance(grille, i, j, modele, rng):
     """
     (8) un jaune à distance h fait naître un noir : case VIDE, hors
-    iridophores, et case à distance h JAUNE.
+    iridophores, et case à distance h JAUNE. Avec --contact, (8') : la case
+    doit aussi toucher une case occupée, testé avant de tirer la case à
+    distance pour ne pas tirer d'angle inutile.
     """
     if (grille[i, j] == VIDE and not modele["noir_interdit"][i, j]
+            and (not modele["contact"] or contact_ok(grille, i, j, modele["voisins"]))
             and modele["case_a_distance"](grille, i, j, modele["h"], rng) == JAUNE):
         grille[i, j] = NOIR
         return True
@@ -537,7 +627,9 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
       - (6) noir tue jaune : case JAUNE et voisin tiré NOIR ;
       - (7) jaune tue noir : case NOIR et voisin tiré JAUNE ;
       - (8) noir naît à distance : case VIDE, hors iridophores
-        (noir_interdit[i, j] faux) et case à distance h JAUNE.
+        (noir_interdit[i, j] faux) et case à distance h JAUNE ;
+      - avec --contact, (2'), (3') et (8') : les naissances demandent en
+        plus qu'un voisin direct de la case soit occupé (contact_ok).
 
     Sinon la tentative est ratée et la grille n'est pas modifiée. Le
     voisin (règles 6 et 7) ou la case à distance (règle 8) n'est tiré que
@@ -556,7 +648,8 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
         Données du run lues par les règles, préparées une fois par
         simulation_peau : "h" (portée de l'interaction à distance),
         "noir_interdit" (masque des iridophores, voir masque_iridophores),
-        "voisins" et "case_a_distance" (ceux du réseau, voir RESEAUX).
+        "contact" (option --contact), "voisins" et "case_a_distance"
+        (ceux du réseau, voir RESEAUX).
     rng : random.Random
         Générateur aléatoire.
 
@@ -573,13 +666,13 @@ def simulation_peau(grille, params, pas_faits, rng):
     Boucle Monte Carlo : fait les pas restants, de pas_faits à n_pas.
 
     Une fois au début : les données lues par les règles (modele : le
-    masque des iridophores, construit avec masque_iridophores(L, bande), et
-    les voisins et la case à distance du réseau) et le dictionnaire des
-    règles actives avec leur probabilité (regles_actives). À chaque pas :
-    tirer une case (i, j) uniforme, tirer une règle, l'appliquer si
-    possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé
-    avec sauvegarder_run pour pouvoir être relancé, sauf au dernier pas :
-    la sauvegarde finale est faite par le programme principal.
+    masque des iridophores, construit avec masque_iridophores(L, bande),
+    l'option --contact, les voisins et la case à distance du réseau) et le
+    dictionnaire des règles actives avec leur probabilité (regles_actives).
+    À chaque pas : tirer une case (i, j) uniforme, tirer une règle,
+    l'appliquer si possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est
+    sauvegardé avec sauvegarder_run pour pouvoir être relancé, sauf au
+    dernier pas : la sauvegarde finale est faite par le programme principal.
 
     Paramètres
     ----------
@@ -610,6 +703,7 @@ def simulation_peau(grille, params, pas_faits, rng):
     modele = {
         "h": params["h"],
         "noir_interdit": masque_iridophores(L, params["bande"]),
+        "contact": params["contact"],
         "voisins": reseau["voisins"],
         "case_a_distance": reseau["case_a_distance"],
     }
