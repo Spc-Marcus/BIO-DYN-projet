@@ -24,6 +24,12 @@ Blessure : règle (9), de taux --lB, qui vide la case tirée et toutes celles
 une seule blessure au centre de la grille au temps tB, après avoir gardé la
 grille d'avant dans grille_avant_blessure.npy.
 
+Réseau : carré par défaut, comme dans l'article (4 voisins). Avec
+--reseau hex, réseau hexagonal (6 voisins à distance 1) dans la même
+matrice L x L, en coordonnées axiales : la case (i, j) est au point
+x = j + i/2, y = (√3/2) i du plan, et ses voisins sont les 4 du carré plus
+(1, -1) et (-1, 1). Tout ce qui dépend du réseau est dans RESEAUX.
+
 Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
 masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
 bande horizontale de `bande` lignes (0 = pas d'iridophores) ; une autre
@@ -48,6 +54,7 @@ Utilisation :
     python simulation.py --h 16 --lX 2.5 --dX 0.1 --dM 0.1   # morts naturelles (4) et (5)
     python simulation.py --h 16 --lX 2.5 --contact --rho0 0.01   # naissances au contact
     python simulation.py --h 16 --lX 2.5 --tB 7000 --n_pas 800000000   # blessure au centre à t = 7000
+    python simulation.py --h 16 --lX 2.5 --reseau hex   # réseau hexagonal
 """
 
 import argparse
@@ -92,6 +99,7 @@ DEFAUTS = {
     "dX": 0.0,   # (4) mort du jaune
     "dM": 0.0,   # (5) mort du noir
     "s": S,      # (6) et (7) élimination entre voisins, sX = sM = s
+    "reseau": "carre",  # réseau carré (4 voisins) ou hexagonal (6 voisins), voir RESEAUX
     "contact": False,   # naissances seulement au contact d'une case occupée
     "rho0": 0.0,        # fraction de cases occupées au départ
     "fX0": 1.0,         # part de jaunes parmi ces cases
@@ -106,8 +114,11 @@ DEFAUTS = {
 PAS_ENTRE_SAUVEGARDES = 10**7
 
 # 6. Voisins directs sur le réseau carré : haut, bas, gauche, droite. Ne pas
-#    changer l'ordre : il fixe le voisin associé à chaque tirage.
+#    changer l'ordre : il fixe le voisin associé à chaque tirage. Sur le
+#    réseau hexagonal (coordonnées axiales), les mêmes plus une diagonale.
 VOISINS_CARRE = ((1, 0), (-1, 0), (0, 1), (0, -1))
+VOISINS_HEX = VOISINS_CARRE + ((1, -1), (-1, 1))
+RACINE_3 = math.sqrt(3)
 
 
 def lire_arguments():
@@ -128,6 +139,7 @@ def lire_arguments():
                 (désactivé par défaut) ;
       --bX, --bM, --dX, --dM, --s  taux des règles (2), (3), (4), (5), et
                 (6)-(7) (défauts 1, 0, 0, 0, 1 : ceux de l'article, DEFAUTS) ;
+      --reseau  carre (défaut, 4 voisins) ou hex (6 voisins) ;
       --contact naissances (2), (3) et (8) seulement si un voisin direct de
                 la case est occupé (désactivé par défaut) ;
       --rho0    fraction de cases occupées au départ, entre 0 et 1
@@ -163,6 +175,7 @@ def lire_arguments():
     parser.add_argument("--dX", type=float, default=DEFAUTS["dX"], help="(4) mort du jaune")
     parser.add_argument("--dM", type=float, default=DEFAUTS["dM"], help="(5) mort du noir")
     parser.add_argument("--s", type=float, default=DEFAUTS["s"], help="(6) et (7) élimination entre voisins")
+    parser.add_argument("--reseau", choices=list(RESEAUX), default=DEFAUTS["reseau"], help="réseau de la peau")
     parser.add_argument("--contact", action="store_true", help="naissances seulement au contact d'une case occupée")
     parser.add_argument("--rho0", type=float, default=DEFAUTS["rho0"], help="fraction de cases occupées au départ")
     parser.add_argument("--fX0", type=float, default=DEFAUTS["fX0"], help="part de jaunes parmi ces cases")
@@ -196,7 +209,8 @@ def nom_dossier(params):
 
     out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}, suivi d'un suffixe par option
     du modèle différente de sa valeur par défaut (DEFAUTS) : _bX{bX},
-    _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux, _c pour --contact,
+    _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux, _hex pour le réseau
+    hexagonal, _c pour --contact,
     _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ, _B{lB}, _a{alpha}
     (s'il y a une blessure) et _tB{tB} pour la blessure. Avec les options
     par défaut, c'est le nom des runs lancés avant ces options : ils sont
@@ -216,6 +230,8 @@ def nom_dossier(params):
     for cle in ("bX", "bM", "dX", "dM", "s"):
         if params[cle] != DEFAUTS[cle]:
             sortie += f"_{cle}{params[cle]}"
+    if params["reseau"] != DEFAUTS["reseau"]:
+        sortie += f"_{params['reseau']}"
     if params["contact"]:
         sortie += "_c"
     if params["rho0"] != DEFAUTS["rho0"]:
@@ -257,8 +273,8 @@ def preparer_run(args):
     -------
     params : dict
         Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
-        celles de DEFAUTS ("bX", "bM", "dX", "dM", "s", "contact", "rho0",
-        "fX0", "lB", "alpha", "tB") et "sortie".
+        celles de DEFAUTS ("bX", "bM", "dX", "dM", "s", "reseau",
+        "contact", "rho0", "fX0", "lB", "alpha", "tB") et "sortie".
     grille : np.ndarray uint8, forme (L, L)
         Grille de départ (initialiser_grille, ou relue pour une reprise).
     pas_faits : int
@@ -286,6 +302,7 @@ def preparer_run(args):
         "dX": args.dX,
         "dM": args.dM,
         "s": args.s,
+        "reseau": args.reseau,
         "contact": args.contact,
         "rho0": args.rho0,
         "fX0": args.fX0,
@@ -458,9 +475,11 @@ def voisin_au_hasard(grille, i, j, voisins, rng):
     """
     Renvoie l'état d'un des voisins directs de la case (i, j).
 
-    Le voisin est tiré uniformément parmi les voisins du réseau (haut, bas,
-    gauche, droite sur le réseau carré) avec un seul nombre aléatoire ; les
-    bords sont périodiques (mod L). Utilisé par les règles (6) et (7).
+    Le voisin est tiré uniformément parmi les z voisins du réseau (haut,
+    bas, gauche, droite sur le réseau carré, et les deux diagonales
+    (1, -1), (-1, 1) en plus sur le réseau hexagonal) avec un seul nombre
+    aléatoire ; les bords sont périodiques (mod L). Utilisé par les règles
+    (6) et (7).
 
     Paramètres
     ----------
@@ -574,8 +593,119 @@ def d2_carre(di, dj):
     return di * di + dj * dj
 
 
+def d2_hex(di, dj):
+    """
+    Distance² (en cases) d'un décalage axial (di, dj) sur le réseau
+    hexagonal : avec x = dj + di/2 et y = (√3/2) di, x² + y² vaut
+    di² + di dj + dj². Les 6 voisins sont à distance 1.
+
+    Paramètres
+    ----------
+    di, dj : int
+        Décalage en coordonnées axiales.
+
+    Renvoie
+    -------
+    d2 : int
+        di² + di dj + dj².
+    """
+    return di * di + di * dj + dj * dj
+
+
+def arrondi_hex(dx, dy):
+    """
+    Décalage axial (di, dj) de la case du réseau hexagonal la plus proche
+    du déplacement (dx, dy) dans le plan.
+
+    On repasse en coordonnées axiales fractionnaires (r = di, q = dj), on
+    arrondit les trois coordonnées « cube » q, r, s = -q - r, puis on
+    recalcule celle qui a le plus grand écart d'arrondi pour garder
+    q + r + s = 0 (arrondi hexagonal de Red Blob Games, Hexagonal Grids).
+
+    Paramètres
+    ----------
+    dx, dy : float
+        Déplacement dans le plan, en cases.
+
+    Renvoie
+    -------
+    di, dj : int
+        Décalage axial de la case la plus proche.
+    """
+    r = 2 * dy / RACINE_3   # di fractionnaire
+    q = dx - r / 2          # dj fractionnaire
+    s = -q - r              # 3e coordonnée « cube » : q + r + s = 0
+    rq, rr, rs = round(q), round(r), round(s)
+    eq, er, es = abs(rq - q), abs(rr - r), abs(rs - s)
+    if eq > er and eq > es:
+        rq = -rr - rs
+    elif er > es:
+        rr = -rq - rs
+    return rr, rq
+
+
+def case_a_distance_hex(grille, i, j, h, rng):
+    """
+    Renvoie l'état d'une case située à distance h de la case (i, j), sur le
+    réseau hexagonal.
+
+    Comme sur le réseau carré : angle alpha uniforme dans [0, 2π[, point
+    (h cos alpha, h sin alpha) dans le plan, puis la case la plus proche
+    (arrondi_hex), modulo L. Utilisé par la règle (8).
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+        État courant de la peau.
+    i, j : int
+        Coordonnées axiales de la case.
+    h : int
+        Portée de l'interaction, en cases.
+    rng : random.Random
+        Générateur aléatoire.
+
+    Renvoie
+    -------
+    etat : int
+        VIDE, JAUNE ou NOIR.
+    """
+    L = grille.shape[0]
+    alpha = rng.random() * 2 * math.pi
+    di, dj = arrondi_hex(h * math.cos(alpha), h * math.sin(alpha))
+    return grille[(i + di) % L, (j + dj) % L]
+
+
+def vers_image_hex(grille):
+    """
+    Image « briques » d'une grille du réseau hexagonal, de forme L x 2L.
+
+    Chaque case occupe 2 pixels d'une ligne et la ligne i est décalée de i
+    pixels (i/2 case), modulo 2L : chaque brique touche alors exactement
+    ses 6 voisines. À afficher avec aspect = √3 (un pixel fait 1/2 case de
+    large et √3/2 de haut). Le haut et le bas de l'image se recollent avec
+    un décalage de L/2 cases : une rayure qui sort en bas revient décalée
+    en haut.
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+
+    Renvoie
+    -------
+    image : np.ndarray, forme (L, 2L), même type que grille
+    """
+    L = grille.shape[0]
+    I = np.arange(L)[:, None]
+    colonnes = (2 * np.arange(L)[None, :] + I) % (2 * L)
+    image = np.empty((L, 2 * L), dtype=grille.dtype)
+    image[I, colonnes] = grille
+    image[I, (colonnes + 1) % (2 * L)] = grille
+    return image
+
+
 # 7. Réseaux : tout ce qui dépend de la géométrie de la peau, lu par les
-#    règles et par l'image. Le réseau carré est celui de l'article.
+#    règles et par l'image. Le réseau carré est celui de l'article ; le
+#    réseau hexagonal garde la matrice L x L en coordonnées axiales.
 #      voisins         : décalages (di, dj) des voisins directs ;
 #      d2              : distance² d'un décalage (di, dj), pour la blessure ;
 #      case_a_distance : case à distance h, pour la règle (8) ;
@@ -589,6 +719,13 @@ RESEAUX = {
         "vers_image": vers_image_carre,
         "aspect": 1.0,
     },
+    "hex": {
+        "voisins": VOISINS_HEX,
+        "d2": d2_hex,
+        "case_a_distance": case_a_distance_hex,
+        "vers_image": vers_image_hex,
+        "aspect": RACINE_3,
+    },
 }
 
 
@@ -597,8 +734,9 @@ def disque(d2, R):
     Décalages de toutes les cases à distance <= R de la case (0, 0), centre
     compris : le disque D_R de la blessure, calculé une fois par run.
 
-    On parcourt le carré |di|, |dj| <= ceil(R) + 1, qui contient le disque
-    sur le réseau carré, et on garde les décalages avec d2(di, dj) <= R².
+    On parcourt le carré |di|, |dj| <= ceil(2R/√3) + 1, qui contient le
+    disque sur les deux réseaux (sur le réseau hexagonal, d2 >= (3/4) di²
+    et (3/4) dj²), et on garde les décalages avec d2(di, dj) <= R².
     Le disque autour de (i, j) est alors grille[(i + DI) % L, (j + DJ) % L].
 
     Paramètres
@@ -613,7 +751,7 @@ def disque(d2, R):
     DI, DJ : np.ndarray d'entiers, forme (n,)
         Décalages en lignes et en colonnes des n cases du disque.
     """
-    n = int(math.ceil(R)) + 1
+    n = int(math.ceil(2 * R / RACINE_3)) + 1
     decalages = [(di, dj) for di in range(-n, n + 1) for dj in range(-n, n + 1) if d2(di, dj) <= R * R]
     DI = np.array([di for di, dj in decalages])
     DJ = np.array([dj for di, dj in decalages])
@@ -836,7 +974,7 @@ def simulation_peau(grille, params, pas_faits, rng):
     """
     # 1. Paramètres du run et données lues par les règles
     L = params["L"]
-    reseau = RESEAUX["carre"]
+    reseau = RESEAUX[params["reseau"]]
     modele = {
         "h": params["h"],
         "noir_interdit": masque_iridophores(L, params["bande"]),
@@ -935,8 +1073,8 @@ def sauvegarder_run(grille, params, pas_faits, rng):
     os.replace(os.path.join(dossier, "grille.tmp.npy"), os.path.join(dossier, "grille.npy"))
     os.replace(os.path.join(dossier, "params.tmp.json"), os.path.join(dossier, "params.json"))
 
-    # 2. Image de la grille, iridophores en gris argenté par-dessus
-    reseau = RESEAUX["carre"]
+    # 2. Image de la grille (vers_image du réseau), iridophores en gris argenté par-dessus
+    reseau = RESEAUX[params["reseau"]]
     plt.figure(figsize=(6, 6))
     plt.imshow(reseau["vers_image"](grille), cmap=ListedColormap(COULEURS), vmin=0, vmax=2,
                interpolation="nearest", aspect=reseau["aspect"])
@@ -995,6 +1133,40 @@ def charger_run(dossier):
     pas_faits = params.pop("pas_faits")
     params.pop("t")
     return params, grille, pas_faits, rng
+
+
+def lambda_fft(grille, reseau):
+    """
+    Longueur d'onde dominante du motif, en cases, mesurée par FFT 2D du
+    champ noir (grille == NOIR, moyenne retirée).
+
+    Le pic du spectre a les indices signés (m_i, m_j) de np.fft.fftfreq.
+    Sur le réseau carré, lambda = L / sqrt(m_i² + m_j²). Sur le réseau
+    hexagonal la matrice est en coordonnées axiales et il faut repasser
+    dans le plan : lambda = (√3/2) L / sqrt(m_i² - m_i m_j + m_j²), exact
+    sur une onde plane.
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+        Grille de VIDE, JAUNE et NOIR.
+    reseau : str
+        "carre" ou "hex" (params["reseau"]).
+
+    Renvoie
+    -------
+    lam : float
+        Longueur d'onde, en cases.
+    """
+    L = grille.shape[0]
+    f = (grille == NOIR).astype(float)
+    F = np.abs(np.fft.fft2(f - f.mean())) ** 2
+    F[0, 0] = 0
+    ki, kj = np.unravel_index(np.argmax(F), F.shape)
+    mi, mj = np.fft.fftfreq(L, 1 / L)[[ki, kj]]
+    if reseau == "hex":
+        return RACINE_3 / 2 * L / math.sqrt(mi * mi - mi * mj + mj * mj)
+    return L / math.hypot(mi, mj)
 
 
 if __name__ == "__main__":
