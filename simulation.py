@@ -5,27 +5,37 @@ GenOuest par slurm_pipeline/ (algorithme dans pseudocode.md).
 La peau est une grille L x L à bords périodiques. Chaque case vaut VIDE,
 JAUNE (xantophore) ou NOIR (mélanophore). À chaque pas on tire une case et
 une règle selon les taux, puis on applique la règle si la configuration le
-permet. Comme dans l'article : bM = dX = dM = 0 et sX = sM = s, il ne reste
-donc que les règles (2), (6), (7) et (8).
+permet.
+
+Règles : les règles (2) à (8) de l'article sont rangées dans un
+dictionnaire règle -> taux construit à partir des options de la ligne de
+commande (--bX, --bM, --dX, --dM, --s, --lX). Seules les règles de taux non
+nul y sont gardées, et chacune est appliquée par sa fonction (table
+ACTIONS). Par défaut les taux sont ceux de l'article : bM = dX = dM = 0 et
+sX = sM = s, il ne reste donc que les règles (2), (6), (7) et (8).
 
 Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
 masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
 bande horizontale de `bande` lignes (0 = pas d'iridophores) ; une autre
 forme se branche en ne modifiant que masque_iridophores.
 
-Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}.
-Relancer la même commande récupère ce qui y est sauvegardé : un run coupé
-par la limite de temps Slurm reprend là où il s'est arrêté, un run terminé
-n'est pas refait. Le générateur aléatoire est un random.Random dont l'état
-est sauvegardé avec la grille : un run repris donne exactement la même
-grille finale qu'un run fait d'une traite.
+Le run est sauvegardé régulièrement dans out/L{L}_h{h}_lX{lX}_b{bande}_g{graine},
+suivi d'un suffixe par option du modèle différente de sa valeur par défaut
+(par exemple out/L100_h16_lX2.5_b0_g0_dX0.1_dM0.1). Relancer la même
+commande récupère ce qui y est sauvegardé : un run coupé par la limite de
+temps Slurm reprend là où il s'est arrêté, un run terminé n'est pas refait,
+et un run sauvegardé avec d'autres paramètres n'est pas repris. Le
+générateur aléatoire est un random.Random dont l'état est sauvegardé avec
+la grille : un run repris donne exactement la même grille finale qu'un run
+fait d'une traite.
 
 Durée : environ 1 µs par pas en Python pur, soit 15 à 20 min pour 10⁹ pas
 avec L = 100 (mesuré sur une machine de test).
 
 Utilisation :
     python simulation.py --h 16 --lX 2.5
-    python simulation.py --h 16 --lX 2.5 --historique   # garde toutes les grilles
+    python simulation.py --h 16 --lX 2.5 --historique        # garde toutes les grilles
+    python simulation.py --h 16 --lX 2.5 --dX 0.1 --dM 0.1   # morts naturelles (4) et (5)
 """
 
 import argparse
@@ -46,20 +56,39 @@ JAUNE = 1
 NOIR = 2
 COULEURS = ["white", "gold", "black"]   # couleur de VIDE, JAUNE, NOIR sur les images
 
-# 2. Règles restantes, dans l'ordre des taux [BX, S, S, lX]
-NAISSANCE_JAUNE = 0        # (2) S_i -> X_i
-NOIR_TUE_JAUNE = 1         # (6) M_{i±1} + X_i -> M_{i±1} + S_i
-JAUNE_TUE_NOIR = 2         # (7) X_{i±1} + M_i -> X_{i±1} + S_i
-NOIR_NAIT_A_DISTANCE = 3   # (8) X_{i±h} + S_i -> X_{i±h} + M_i
+# 2. Règles du modèle, numérotées comme les équations de l'article
+NAISSANCE_JAUNE = 2        # (2) S_i -> X_i
+NAISSANCE_NOIR = 3         # (3) S_i -> M_i
+MORT_JAUNE = 4             # (4) X_i -> S_i
+MORT_NOIR = 5              # (5) M_i -> S_i
+NOIR_TUE_JAUNE = 6         # (6) M_{i±1} + X_i -> M_{i±1} + S_i
+JAUNE_TUE_NOIR = 7         # (7) X_{i±1} + M_i -> X_{i±1} + S_i
+NOIR_NAIT_A_DISTANCE = 8   # (8) X_{i±h} + S_i -> X_{i±h} + M_i
 
-# 3. Taux fixés comme dans l'article
+# 3. Taux fixés comme dans l'article (valeurs par défaut de --bX et --s)
 BX = 1.0   # naissance spontanée du jaune
 S = 1.0    # élimination entre voisins de couleurs différentes
 
-# 4. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
+# 4. Valeurs par défaut des options du modèle. Une option différente de sa
+#    valeur par défaut ajoute un suffixe au nom du dossier du run (voir
+#    nom_dossier) ; un run sauvegardé avant l'ajout d'une option est relu
+#    avec la valeur par défaut de cette option.
+DEFAUTS = {
+    "bX": BX,    # (2) naissance spontanée du jaune
+    "bM": 0.0,   # (3) naissance spontanée du noir
+    "dX": 0.0,   # (4) mort du jaune
+    "dM": 0.0,   # (5) mort du noir
+    "s": S,      # (6) et (7) élimination entre voisins, sX = sM = s
+}
+
+# 5. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
 #    Avec --historique, chaque sauvegarde est aussi gardée dans historique/
 #    (pour une timeline ou un GIF avec timeline.py).
 PAS_ENTRE_SAUVEGARDES = 10**7
+
+# 6. Voisins directs sur le réseau carré : haut, bas, gauche, droite. Ne pas
+#    changer l'ordre : il fixe le voisin associé à chaque tirage.
+VOISINS_CARRE = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
 
 def lire_arguments():
@@ -70,14 +99,19 @@ def lire_arguments():
       --L       taille de la grille, entier (défaut 100) ;
       --h       portée de l'interaction à distance, en cases, entier
                 (défaut 16) ;
-      --lX      taux de naissance du noir grâce à un jaune à distance h
-                (défaut 2.5) ;
+      --lX      taux de naissance du noir grâce à un jaune à distance h,
+                règle (8) (défaut 2.5) ;
       --bande   largeur de la bande d'iridophores en lignes, entier
                 (défaut 0 = pas d'iridophores) ;
       --n_pas   nombre total de tentatives, entier (défaut 1000000000) ;
       --graine  graine du générateur aléatoire, entier (défaut 0) ;
       --historique  garde une copie de la grille à chaque sauvegarde
-                (désactivé par défaut).
+                (désactivé par défaut) ;
+      --bX, --bM, --dX, --dM, --s  taux des règles (2), (3), (4), (5), et
+                (6)-(7) (défauts 1, 0, 0, 0, 1 : ceux de l'article, DEFAUTS).
+
+    Le programme s'arrête avec un message d'erreur si un taux est négatif
+    ou si tous les taux sont nuls.
 
     Renvoie
     -------
@@ -86,28 +120,67 @@ def lire_arguments():
     parser = argparse.ArgumentParser(description="Un run Monte Carlo (Bullara & De Decker 2015)")
     parser.add_argument("--L", type=int, default=100, help="taille de la grille")
     parser.add_argument("--h", type=int, default=16, help="portée de l'interaction à distance")
-    parser.add_argument("--lX", type=float, default=2.5, help="naissance du noir à distance h")
+    parser.add_argument("--lX", type=float, default=2.5, help="(8) naissance du noir à distance h")
     parser.add_argument("--bande", type=int, default=0, help="largeur de la bande d'iridophores")
     parser.add_argument("--n_pas", type=int, default=1000000000, help="nombre total de tentatives")
     parser.add_argument("--graine", type=int, default=0, help="graine du générateur aléatoire")
     parser.add_argument("--historique", action="store_true", help="garde la grille à chaque sauvegarde")
-    return parser.parse_args()
+    parser.add_argument("--bX", type=float, default=DEFAUTS["bX"], help="(2) naissance spontanée du jaune")
+    parser.add_argument("--bM", type=float, default=DEFAUTS["bM"], help="(3) naissance spontanée du noir")
+    parser.add_argument("--dX", type=float, default=DEFAUTS["dX"], help="(4) mort du jaune")
+    parser.add_argument("--dM", type=float, default=DEFAUTS["dM"], help="(5) mort du noir")
+    parser.add_argument("--s", type=float, default=DEFAUTS["s"], help="(6) et (7) élimination entre voisins")
+    args = parser.parse_args()
+
+    # Taux positifs ou nuls, dont au moins un non nul
+    taux = [args.bX, args.bM, args.dX, args.dM, args.s, args.lX]
+    if min(taux) < 0 or max(taux) == 0:
+        parser.error("les taux doivent être positifs ou nuls, et au moins un non nul")
+    return args
+
+
+def nom_dossier(params):
+    """
+    Construit le nom du dossier du run.
+
+    out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}, suivi d'un suffixe par option
+    du modèle différente de sa valeur par défaut (DEFAUTS), dans l'ordre des
+    règles : _bX{bX}, _bM{bM}, _dX{dX}, _dM{dM}, _s{s}. Avec les options par
+    défaut, c'est le nom des runs lancés avant ces options : ils sont
+    retrouvés et repris.
+
+    Paramètres
+    ----------
+    params : dict
+        Paramètres du run (voir preparer_run).
+
+    Renvoie
+    -------
+    sortie : str
+        Chemin du dossier, relatif à la racine du projet.
+    """
+    sortie = f"out/L{params['L']}_h{params['h']}_lX{params['lX']}_b{params['bande']}_g{params['graine']}"
+    for cle in ("bX", "bM", "dX", "dM", "s"):
+        if params[cle] != DEFAUTS[cle]:
+            sortie += f"_{cle}{params[cle]}"
+    return sortie
 
 
 def preparer_run(args):
     """
     Prépare le run : nouveau, ou repris depuis son dossier s'il existe déjà.
 
-    Le dossier du run est out/L{L}_h{h}_lX{lX}_b{bande}_g{graine} ; il ne
-    dépend ni de n_pas ni de historique.
+    Le dossier du run est donné par nom_dossier ; il ne dépend ni de n_pas
+    ni de historique.
       - Pas de params.json dans ce dossier : nouveau run, grille vide,
         générateur random.Random(graine), 0 pas effectué.
       - Sinon : reprise, la grille, pas_faits et l'état du générateur sont
-        récupérés avec charger_run. Les paramètres renvoyés sont toujours
-        ceux de la ligne de commande : L, h, lX, bande et graine sont les
-        mêmes (ils forment le nom du dossier), tandis que n_pas et
-        historique peuvent changer, ce qui permet de prolonger un run ou de
-        commencer à garder son historique.
+        récupérés avec charger_run. Les paramètres sauvegardés doivent être
+        ceux de la ligne de commande, sauf n_pas et historique qui peuvent
+        changer, ce qui permet de prolonger un run ou de commencer à garder
+        son historique. Sinon le programme s'arrête plutôt que de reprendre
+        un run avec d'autres paramètres. Une option absente du params.json
+        (run lancé avant l'ajout de l'option) y vaut sa valeur par défaut.
 
     Paramètres
     ----------
@@ -118,13 +191,19 @@ def preparer_run(args):
     -------
     params : dict
         Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
-        "sortie".
+        celles de DEFAUTS ("bX", "bM", "dX", "dM", "s") et "sortie".
     grille : np.ndarray uint8, forme (L, L)
         Grille de départ (vide, ou relue pour une reprise).
     pas_faits : int
         Nombre de pas déjà effectués.
     rng : random.Random
         Générateur aléatoire.
+
+    Lève
+    ----
+    SystemExit
+        Si le run sauvegardé dans le dossier a d'autres paramètres que la
+        ligne de commande.
     """
     # 1. Paramètres de la ligne de commande
     params = {
@@ -135,12 +214,24 @@ def preparer_run(args):
         "n_pas": args.n_pas,
         "graine": args.graine,
         "historique": args.historique,
+        "bX": args.bX,
+        "bM": args.bM,
+        "dX": args.dX,
+        "dM": args.dM,
+        "s": args.s,
     }
-    params["sortie"] = f"out/L{args.L}_h{args.h}_lX{args.lX}_b{args.bande}_g{args.graine}"
+    params["sortie"] = nom_dossier(params)
 
-    # 2. Reprise si le run a déjà été sauvegardé
+    # 2. Reprise si le run a déjà été sauvegardé, avec les mêmes paramètres
     if os.path.exists(os.path.join(params["sortie"], "params.json")):
         params_sauvegardes, grille, pas_faits, rng = charger_run(params["sortie"])
+        differents = [cle for cle in params
+                      if cle not in ("n_pas", "historique", "sortie")
+                      and params_sauvegardes.get(cle, DEFAUTS.get(cle)) != params[cle]]
+        if differents:
+            detail = ", ".join(f"{cle} = {params_sauvegardes.get(cle, DEFAUTS.get(cle))} au lieu de {params[cle]}"
+                               for cle in differents)
+            raise SystemExit(f"Erreur : {params['sortie']} a été sauvegardé avec d'autres paramètres ({detail})")
         return params, grille, pas_faits, rng
 
     # 3. Sinon nouveau run
@@ -170,13 +261,12 @@ def masque_iridophores(L, bande):
     """
     Construit le masque des cases couvertes par les iridophores.
 
-    Sur ces cases le noir ne peut pas naître : la règle (8) y est bloquée,
-    comme la règle (3) si bM était non nul (Fig. 1b-c). Pour l'instant le
-    masque est une bande horizontale de `bande` lignes au milieu de la
-    grille : les lignes (L - bande) // 2 à (L - bande) // 2 + bande - 1.
-    Pour une autre forme d'iridophores, il suffit de modifier cette
-    fonction : le reste du code (simulation et image) ne lit que le
-    masque.
+    Sur ces cases le noir ne peut pas naître : les règles (3) et (8) y sont
+    bloquées (Fig. 1b-c). Pour l'instant le masque est une bande
+    horizontale de `bande` lignes au milieu de la grille : les lignes
+    (L - bande) // 2 à (L - bande) // 2 + bande - 1. Pour une autre forme
+    d'iridophores, il suffit de modifier cette fonction : le reste du code
+    (simulation et image) ne lit que le masque.
 
     Paramètres
     ----------
@@ -197,43 +287,87 @@ def masque_iridophores(L, bande):
     return noir_interdit
 
 
+def regles_actives(params):
+    """
+    Construit le dictionnaire des règles actives et de leur probabilité.
+
+    Chaque règle reçoit le taux donné par son option (DEFAUTS : taux de
+    l'article), dans l'ordre des équations (2) à (8). Les règles de taux nul
+    sont retirées : placée en dernier, une règle de taux nul serait sinon
+    renvoyée par le repli d'arrondi de tirer_regle. Puis
+    P_k = taux_k / somme(taux). Avec les taux par défaut il reste (2), (6),
+    (7) et (8), dans cet ordre : les tirages sont les mêmes que lorsque ces
+    quatre règles étaient écrites en dur.
+
+    Pour ajouter une règle : sa fonction dans ACTIONS et son taux ici.
+
+    Paramètres
+    ----------
+    params : dict
+        Paramètres du run (voir preparer_run).
+
+    Renvoie
+    -------
+    proba : dict
+        Règle -> probabilité de la choisir à chaque pas, dans l'ordre des
+        équations, de somme 1.
+    """
+    # 1. Taux de chaque règle, donnés par les options
+    taux = {
+        NAISSANCE_JAUNE: params["bX"],        # (2) --bX
+        NAISSANCE_NOIR: params["bM"],         # (3) --bM
+        MORT_JAUNE: params["dX"],             # (4) --dX
+        MORT_NOIR: params["dM"],              # (5) --dM
+        NOIR_TUE_JAUNE: params["s"],          # (6) --s
+        JAUNE_TUE_NOIR: params["s"],          # (7) --s
+        NOIR_NAIT_A_DISTANCE: params["lX"],   # (8) --lX
+    }
+
+    # 2. Règles actives seulement
+    taux = {regle: t for regle, t in taux.items() if t > 0}
+
+    # 3. Probabilité de choisir chaque règle : P_k = taux_k / somme(taux)
+    somme = sum(taux.values())
+    return {regle: t / somme for regle, t in taux.items()}
+
+
 def tirer_regle(proba, rng):
     """
     Tire une règle au hasard selon les probabilités données.
 
-    Tirage pondéré : on découpe [0, 1[ en segments de longueur proba[k] et
-    on renvoie le segment dans lequel tombe un nombre uniforme u. Si les
-    arrondis font que u dépasse la somme cumulée, la dernière règle est
-    renvoyée.
+    Tirage pondéré : on découpe [0, 1[ en segments de longueur proba[regle],
+    dans l'ordre du dictionnaire, et on renvoie la règle du segment dans
+    lequel tombe un nombre uniforme u. Si les arrondis font que u dépasse la
+    somme cumulée, la dernière règle est renvoyée.
 
     Paramètres
     ----------
-    proba : liste de 4 float
-        Probabilités des règles, [BX, S, S, lX] / somme.
+    proba : dict
+        Règle -> probabilité, sortie de regles_actives.
     rng : random.Random
         Générateur aléatoire.
 
     Renvoie
     -------
     regle : int
-        Indice de la règle tirée, entre 0 et 3.
+        Numéro de la règle tirée (NAISSANCE_JAUNE, ...).
     """
     u = rng.random()
     cumul = 0.0
-    for k in range(len(proba)):
-        cumul = cumul + proba[k]
+    for regle, p in proba.items():
+        cumul = cumul + p
         if u < cumul:
-            return k
-    return len(proba) - 1   # u très proche de 1 : erreurs d'arrondi sur le cumul
+            return regle
+    return regle   # u très proche de 1 : erreurs d'arrondi sur le cumul
 
 
-def voisin_au_hasard(grille, i, j, rng):
+def voisin_au_hasard(grille, i, j, voisins, rng):
     """
-    Renvoie l'état d'un des 4 voisins directs de la case (i, j).
+    Renvoie l'état d'un des voisins directs de la case (i, j).
 
-    Le voisin est tiré uniformément parmi haut, bas, gauche, droite avec
-    un seul nombre aléatoire ; les bords sont périodiques (mod L). Utilisé
-    par les règles (6) et (7).
+    Le voisin est tiré uniformément parmi les voisins du réseau (haut, bas,
+    gauche, droite sur le réseau carré) avec un seul nombre aléatoire ; les
+    bords sont périodiques (mod L). Utilisé par les règles (6) et (7).
 
     Paramètres
     ----------
@@ -241,6 +375,8 @@ def voisin_au_hasard(grille, i, j, rng):
         État courant de la peau.
     i, j : int
         Coordonnées de la case.
+    voisins : tuple de (di, dj)
+        Décalages des voisins directs, RESEAUX[...]["voisins"].
     rng : random.Random
         Générateur aléatoire.
 
@@ -250,13 +386,14 @@ def voisin_au_hasard(grille, i, j, rng):
         VIDE, JAUNE ou NOIR.
     """
     L = grille.shape[0]
-    di, dj = ((1, 0), (-1, 0), (0, 1), (0, -1))[int(rng.random() * 4)]
+    di, dj = voisins[int(rng.random() * len(voisins))]
     return grille[(i + di) % L, (j + dj) % L]
 
 
 def case_a_distance(grille, i, j, h, rng):
     """
-    Renvoie l'état d'une case située à distance h de la case (i, j).
+    Renvoie l'état d'une case située à distance h de la case (i, j), sur le
+    réseau carré.
 
     On tire un angle alpha uniforme dans [0, 2π[ et on regarde la case
     (round(i + h cos alpha), round(j + h sin alpha)), modulo L, avec le
@@ -285,11 +422,118 @@ def case_a_distance(grille, i, j, h, rng):
     return grille[k, l]
 
 
-def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
+def vers_image_carre(grille):
+    """
+    Image d'une grille du réseau carré : la grille elle-même, une case par
+    pixel (à afficher avec aspect = 1).
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+
+    Renvoie
+    -------
+    image : np.ndarray, forme (L, L)
+    """
+    return grille
+
+
+# 7. Réseaux : tout ce qui dépend de la géométrie de la peau, lu par les
+#    règles et par l'image. Le réseau carré est celui de l'article.
+#      voisins         : décalages (di, dj) des voisins directs ;
+#      case_a_distance : case à distance h, pour la règle (8) ;
+#      vers_image      : image de la grille pour plt.imshow ;
+#      aspect          : rapport hauteur / largeur d'un pixel de l'image.
+RESEAUX = {
+    "carre": {
+        "voisins": VOISINS_CARRE,
+        "case_a_distance": case_a_distance,
+        "vers_image": vers_image_carre,
+        "aspect": 1.0,
+    },
+}
+
+
+def naissance_jaune(grille, i, j, modele, rng):
+    """(2) S_i -> X_i : la case doit être VIDE."""
+    if grille[i, j] == VIDE:
+        grille[i, j] = JAUNE
+        return True
+    return False
+
+
+def naissance_noir(grille, i, j, modele, rng):
+    """(3) S_i -> M_i : la case doit être VIDE et hors iridophores."""
+    if grille[i, j] == VIDE and not modele["noir_interdit"][i, j]:
+        grille[i, j] = NOIR
+        return True
+    return False
+
+
+def mort_jaune(grille, i, j, modele, rng):
+    """(4) X_i -> S_i : la case doit être JAUNE."""
+    if grille[i, j] == JAUNE:
+        grille[i, j] = VIDE
+        return True
+    return False
+
+
+def mort_noir(grille, i, j, modele, rng):
+    """(5) M_i -> S_i : la case doit être NOIR."""
+    if grille[i, j] == NOIR:
+        grille[i, j] = VIDE
+        return True
+    return False
+
+
+def noir_tue_jaune(grille, i, j, modele, rng):
+    """(6) un noir voisin élimine le jaune : case JAUNE et voisin tiré NOIR."""
+    if grille[i, j] == JAUNE and voisin_au_hasard(grille, i, j, modele["voisins"], rng) == NOIR:
+        grille[i, j] = VIDE
+        return True
+    return False
+
+
+def jaune_tue_noir(grille, i, j, modele, rng):
+    """(7) un jaune voisin élimine le noir : case NOIR et voisin tiré JAUNE."""
+    if grille[i, j] == NOIR and voisin_au_hasard(grille, i, j, modele["voisins"], rng) == JAUNE:
+        grille[i, j] = VIDE
+        return True
+    return False
+
+
+def noir_nait_a_distance(grille, i, j, modele, rng):
+    """
+    (8) un jaune à distance h fait naître un noir : case VIDE, hors
+    iridophores, et case à distance h JAUNE.
+    """
+    if (grille[i, j] == VIDE and not modele["noir_interdit"][i, j]
+            and modele["case_a_distance"](grille, i, j, modele["h"], rng) == JAUNE):
+        grille[i, j] = NOIR
+        return True
+    return False
+
+
+# 8. Table règle -> action : la fonction qui applique chaque règle
+ACTIONS = {
+    NAISSANCE_JAUNE: naissance_jaune,
+    NAISSANCE_NOIR: naissance_noir,
+    MORT_JAUNE: mort_jaune,
+    MORT_NOIR: mort_noir,
+    NOIR_TUE_JAUNE: noir_tue_jaune,
+    JAUNE_TUE_NOIR: jaune_tue_noir,
+    NOIR_NAIT_A_DISTANCE: noir_nait_a_distance,
+}
+
+
+def appliquer_regle(grille, i, j, regle, modele, rng):
     """
     Applique une règle à la case (i, j) si la configuration le permet.
 
+    La règle est appliquée par sa fonction, trouvée dans ACTIONS :
       - (2) naissance jaune : la case doit être VIDE ;
+      - (3) naissance noire : case VIDE, hors iridophores ;
+      - (4) et (5) mort du jaune, du noir : case JAUNE, NOIR ;
       - (6) noir tue jaune : case JAUNE et voisin tiré NOIR ;
       - (7) jaune tue noir : case NOIR et voisin tiré JAUNE ;
       - (8) noir naît à distance : case VIDE, hors iridophores
@@ -307,11 +551,12 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
     i, j : int
         Coordonnées de la case tirée.
     regle : int
-        Indice de la règle, entre 0 et 3.
-    h : int
-        Portée de l'interaction à distance.
-    noir_interdit : np.ndarray de booléens, forme (L, L)
-        Masque des iridophores (voir masque_iridophores).
+        Numéro de la règle (NAISSANCE_JAUNE, ...).
+    modele : dict
+        Données du run lues par les règles, préparées une fois par
+        simulation_peau : "h" (portée de l'interaction à distance),
+        "noir_interdit" (masque des iridophores, voir masque_iridophores),
+        "voisins" et "case_a_distance" (ceux du réseau, voir RESEAUX).
     rng : random.Random
         Générateur aléatoire.
 
@@ -320,43 +565,17 @@ def appliquer_regle(grille, i, j, regle, h, noir_interdit, rng):
     reussie : bool
         True si la grille a été modifiée.
     """
-    case = grille[i, j]
-
-    if regle == NAISSANCE_JAUNE:
-        # (2) S_i -> X_i
-        if case == VIDE:
-            grille[i, j] = JAUNE
-            return True
-
-    elif regle == NOIR_TUE_JAUNE:
-        # (6) un noir voisin élimine le jaune
-        if case == JAUNE and voisin_au_hasard(grille, i, j, rng) == NOIR:
-            grille[i, j] = VIDE
-            return True
-
-    elif regle == JAUNE_TUE_NOIR:
-        # (7) un jaune voisin élimine le noir
-        if case == NOIR and voisin_au_hasard(grille, i, j, rng) == JAUNE:
-            grille[i, j] = VIDE
-            return True
-
-    elif regle == NOIR_NAIT_A_DISTANCE:
-        # (8) un jaune à distance h fait naître un noir, sauf sur les iridophores
-        if case == VIDE and not noir_interdit[i, j] and case_a_distance(grille, i, j, h, rng) == JAUNE:
-            grille[i, j] = NOIR
-            return True
-
-    # La configuration ne permet pas la règle : tentative ratée
-    return False
+    return ACTIONS[regle](grille, i, j, modele, rng)
 
 
 def simulation_peau(grille, params, pas_faits, rng):
     """
     Boucle Monte Carlo : fait les pas restants, de pas_faits à n_pas.
 
-    Le masque des iridophores est construit une fois avec
-    masque_iridophores(L, bande), et les probabilités des règles une fois
-    avec P_k = taux_k / somme(taux), taux = [BX, S, S, lX]. À chaque pas :
+    Une fois au début : les données lues par les règles (modele : le
+    masque des iridophores, construit avec masque_iridophores(L, bande), et
+    les voisins et la case à distance du réseau) et le dictionnaire des
+    règles actives avec leur probabilité (regles_actives). À chaque pas :
     tirer une case (i, j) uniforme, tirer une règle, l'appliquer si
     possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est sauvegardé
     avec sauvegarder_run pour pouvoir être relancé, sauf au dernier pas :
@@ -385,15 +604,18 @@ def simulation_peau(grille, params, pas_faits, rng):
     à numba avec np.random, en gardant une façon de sauvegarder l'état du
     générateur pour la reprise.
     """
-    # 1. Paramètres du run
+    # 1. Paramètres du run et données lues par les règles
     L = params["L"]
-    h = params["h"]
-    noir_interdit = masque_iridophores(L, params["bande"])
+    reseau = RESEAUX["carre"]
+    modele = {
+        "h": params["h"],
+        "noir_interdit": masque_iridophores(L, params["bande"]),
+        "voisins": reseau["voisins"],
+        "case_a_distance": reseau["case_a_distance"],
+    }
 
-    # 2. Probabilité de choisir chaque règle : P_k = taux_k / somme(taux)
-    taux = [BX, S, S, params["lX"]]
-    somme = sum(taux)
-    proba = [t / somme for t in taux]
+    # 2. Règles actives et probabilité de choisir chacune
+    proba = regles_actives(params)
 
     # 3. Boucle Monte Carlo
     for pas in range(pas_faits, params["n_pas"]):
@@ -403,7 +625,7 @@ def simulation_peau(grille, params, pas_faits, rng):
         regle = tirer_regle(proba, rng)
 
         # b. Application de la règle si la configuration le permet
-        appliquer_regle(grille, i, j, regle, h, noir_interdit, rng)
+        appliquer_regle(grille, i, j, regle, modele, rng)
 
         # c. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
         if (pas + 1) % PAS_ENTRE_SAUVEGARDES == 0 and pas + 1 < params["n_pas"]:
@@ -427,10 +649,10 @@ def sauvegarder_run(grille, params, pas_faits, rng):
       - params.json : les paramètres, pas_faits, le temps t = pas_faits / L²
                       et l'état du générateur aléatoire (rng.getstate(),
                       sous la clé "etat_generateur") ;
-      - grille.png  : l'image de la grille (couleurs COULEURS : vide en
-                      blanc, jaune, noir), avec la zone des iridophores en
-                      gris argenté semi-transparent si le masque n'est pas
-                      vide ;
+      - grille.png  : l'image de la grille (vers_image du réseau, couleurs
+                      COULEURS : vide en blanc, jaune, noir), avec la zone
+                      des iridophores en gris argenté semi-transparent si le
+                      masque n'est pas vide ;
       - historique/grille_{pas_faits:012d}.npz : seulement si
                       params["historique"] est vrai. Une copie de la grille
                       à chaque sauvegarde, jamais écrasée, lue par
@@ -473,12 +695,14 @@ def sauvegarder_run(grille, params, pas_faits, rng):
     os.replace(os.path.join(dossier, "params.tmp.json"), os.path.join(dossier, "params.json"))
 
     # 2. Image de la grille, iridophores en gris argenté par-dessus
+    reseau = RESEAUX["carre"]
     plt.figure(figsize=(6, 6))
-    plt.imshow(grille, cmap=ListedColormap(COULEURS), vmin=0, vmax=2, interpolation="nearest")
-    noir_interdit = masque_iridophores(L, params["bande"])
+    plt.imshow(reseau["vers_image"](grille), cmap=ListedColormap(COULEURS), vmin=0, vmax=2,
+               interpolation="nearest", aspect=reseau["aspect"])
+    noir_interdit = reseau["vers_image"](masque_iridophores(L, params["bande"]))
     if noir_interdit.any():
-        plt.imshow(np.ma.masked_where(~noir_interdit, noir_interdit),
-                   cmap=ListedColormap(["silver"]), alpha=0.5, interpolation="nearest")
+        plt.imshow(np.ma.masked_where(~noir_interdit, noir_interdit), cmap=ListedColormap(["silver"]),
+                   alpha=0.5, interpolation="nearest", aspect=reseau["aspect"])
     plt.title(f"L={L}, h={params['h']}, lX={params['lX']}, bande={params['bande']}, t = {t:.0f}")
     plt.axis("off")
     plt.savefig(os.path.join(dossier, "grille.png"), dpi=150, bbox_inches="tight")
