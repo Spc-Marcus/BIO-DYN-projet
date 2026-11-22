@@ -19,6 +19,11 @@ règles (2'), (3') et (8'), que si au moins un de ses voisins directs est
 occupé. La peau part alors d'une fraction rho0 de cases occupées
 (--rho0, --fX0) au lieu d'être vide, sans quoi elle le resterait.
 
+Blessure : règle (9), de taux --lB, qui vide la case tirée et toutes celles
+à distance <= R = alpha h (--alpha), comme une ablation laser. Avec --tB,
+une seule blessure au centre de la grille au temps tB, après avoir gardé la
+grille d'avant dans grille_avant_blessure.npy.
+
 Iridophores : ils ne sont pas simulés comme des cellules, seulement par un
 masque de cases où le noir ne peut pas naître (Fig. 1b-c). Aujourd'hui une
 bande horizontale de `bande` lignes (0 = pas d'iridophores) ; une autre
@@ -42,6 +47,7 @@ Utilisation :
     python simulation.py --h 16 --lX 2.5 --historique        # garde toutes les grilles
     python simulation.py --h 16 --lX 2.5 --dX 0.1 --dM 0.1   # morts naturelles (4) et (5)
     python simulation.py --h 16 --lX 2.5 --contact --rho0 0.01   # naissances au contact
+    python simulation.py --h 16 --lX 2.5 --tB 7000 --n_pas 800000000   # blessure au centre à t = 7000
 """
 
 import argparse
@@ -70,6 +76,7 @@ MORT_NOIR = 5              # (5) M_i -> S_i
 NOIR_TUE_JAUNE = 6         # (6) M_{i±1} + X_i -> M_{i±1} + S_i
 JAUNE_TUE_NOIR = 7         # (7) X_{i±1} + M_i -> X_{i±1} + S_i
 NOIR_NAIT_A_DISTANCE = 8   # (8) X_{i±h} + S_i -> X_{i±h} + M_i
+BLESSURE = 9               # (9) A_j -> S_j pour toute case j à distance <= R de i
 
 # 3. Taux fixés comme dans l'article (valeurs par défaut de --bX et --s)
 BX = 1.0   # naissance spontanée du jaune
@@ -88,6 +95,9 @@ DEFAUTS = {
     "contact": False,   # naissances seulement au contact d'une case occupée
     "rho0": 0.0,        # fraction de cases occupées au départ
     "fX0": 1.0,         # part de jaunes parmi ces cases
+    "lB": 0.0,          # (9) blessure
+    "alpha": 1.0,       # rayon de la blessure R = alpha h
+    "tB": None,         # temps de la blessure unique au centre (None : pas de blessure unique)
 }
 
 # 5. Nombre de pas entre deux sauvegardes (pour pouvoir relancer).
@@ -123,11 +133,18 @@ def lire_arguments():
       --rho0    fraction de cases occupées au départ, entre 0 et 1
                 (défaut 0 = peau vide) ;
       --fX0     part de jaunes parmi ces cases, le reste en noir, entre 0
-                et 1 (défaut 1 = que des jaunes).
+                et 1 (défaut 1 = que des jaunes) ;
+      --lB      taux de la blessure, règle (9) (défaut 0 = pas de blessure) ;
+      --alpha   rayon de la blessure en périodes : R = alpha h (défaut 1) ;
+      --tB      temps (en unités t = pas / L²) d'une blessure unique au
+                centre de la grille (défaut : pas de blessure unique).
 
     Le programme s'arrête avec un message d'erreur si un taux est négatif,
-    si tous les taux sont nuls, si rho0 ou fX0 sort de [0, 1], ou si
-    --contact est donné sans rho0 > 0 (une peau vide le resterait).
+    si tous les taux sont nuls, si rho0 ou fX0 sort de [0, 1], si
+    --contact est donné sans rho0 > 0 (une peau vide le resterait), si une
+    blessure n'a pas 1 <= alpha h < L/2 (au moins une case, sans que le
+    disque se recouvre sur le tore), ou si la blessure unique n'a pas lieu
+    pendant le run (round(tB L²) doit être entre 0 et n_pas - 1).
 
     Renvoie
     -------
@@ -149,10 +166,13 @@ def lire_arguments():
     parser.add_argument("--contact", action="store_true", help="naissances seulement au contact d'une case occupée")
     parser.add_argument("--rho0", type=float, default=DEFAUTS["rho0"], help="fraction de cases occupées au départ")
     parser.add_argument("--fX0", type=float, default=DEFAUTS["fX0"], help="part de jaunes parmi ces cases")
+    parser.add_argument("--lB", type=float, default=DEFAUTS["lB"], help="(9) blessure")
+    parser.add_argument("--alpha", type=float, default=DEFAUTS["alpha"], help="rayon de la blessure R = alpha h")
+    parser.add_argument("--tB", type=float, default=DEFAUTS["tB"], help="temps de la blessure unique au centre")
     args = parser.parse_args()
 
     # 1. Taux positifs ou nuls, dont au moins un non nul
-    taux = [args.bX, args.bM, args.dX, args.dM, args.s, args.lX]
+    taux = [args.bX, args.bM, args.dX, args.dM, args.s, args.lX, args.lB]
     if min(taux) < 0 or max(taux) == 0:
         parser.error("les taux doivent être positifs ou nuls, et au moins un non nul")
 
@@ -161,6 +181,12 @@ def lire_arguments():
         parser.error("--rho0 et --fX0 doivent être entre 0 et 1")
     if args.contact and args.rho0 == 0:
         parser.error("--contact demande --rho0 > 0 : sinon la peau vide le reste")
+
+    # 3. Blessure : au moins une case, sans recouvrement sur le tore, et pendant le run
+    if (args.lB > 0 or args.tB is not None) and not 1 <= args.alpha * args.h < args.L / 2:
+        parser.error("avec une blessure, il faut 1 <= alpha h < L/2")
+    if args.tB is not None and not 0 <= round(args.tB * args.L**2) < args.n_pas:
+        parser.error("la blessure unique doit avoir lieu pendant le run : 0 <= round(tB L²) < n_pas")
     return args
 
 
@@ -171,7 +197,8 @@ def nom_dossier(params):
     out/L{L}_h{h}_lX{lX}_b{bande}_g{graine}, suivi d'un suffixe par option
     du modèle différente de sa valeur par défaut (DEFAUTS) : _bX{bX},
     _bM{bM}, _dX{dX}, _dM{dM}, _s{s} pour les taux, _c pour --contact,
-    _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ. Avec les options
+    _r{rho0} et, si rho0 > 0, _fx{fX0} pour le départ, _B{lB}, _a{alpha}
+    (s'il y a une blessure) et _tB{tB} pour la blessure. Avec les options
     par défaut, c'est le nom des runs lancés avant ces options : ils sont
     retrouvés et repris.
 
@@ -195,6 +222,12 @@ def nom_dossier(params):
         sortie += f"_r{params['rho0']}"
         if params["fX0"] != DEFAUTS["fX0"]:
             sortie += f"_fx{params['fX0']}"
+    if params["lB"] != DEFAUTS["lB"]:
+        sortie += f"_B{params['lB']}"
+    if (params["lB"] > 0 or params["tB"] is not None) and params["alpha"] != DEFAUTS["alpha"]:
+        sortie += f"_a{params['alpha']}"
+    if params["tB"] is not None:
+        sortie += f"_tB{params['tB']}"
     return sortie
 
 
@@ -225,7 +258,7 @@ def preparer_run(args):
     params : dict
         Clés "L", "h", "lX", "bande", "n_pas", "graine", "historique",
         celles de DEFAUTS ("bX", "bM", "dX", "dM", "s", "contact", "rho0",
-        "fX0") et "sortie".
+        "fX0", "lB", "alpha", "tB") et "sortie".
     grille : np.ndarray uint8, forme (L, L)
         Grille de départ (initialiser_grille, ou relue pour une reprise).
     pas_faits : int
@@ -256,6 +289,9 @@ def preparer_run(args):
         "contact": args.contact,
         "rho0": args.rho0,
         "fX0": args.fX0,
+        "lB": args.lB,
+        "alpha": args.alpha,
+        "tB": args.tB,
     }
     params["sortie"] = nom_dossier(params)
 
@@ -346,7 +382,9 @@ def regles_actives(params):
     Construit le dictionnaire des règles actives et de leur probabilité.
 
     Chaque règle reçoit le taux donné par son option (DEFAUTS : taux de
-    l'article), dans l'ordre des équations (2) à (8). Les règles de taux nul
+    l'article, et pas de blessure), dans l'ordre des équations (2) à (9).
+    La blessure unique de --tB n'est pas une règle tirée : elle n'est pas
+    dans ce dictionnaire (voir simulation_peau). Les règles de taux nul
     sont retirées : placée en dernier, une règle de taux nul serait sinon
     renvoyée par le repli d'arrondi de tirer_regle. Puis
     P_k = taux_k / somme(taux). Avec les taux par défaut il reste (2), (6),
@@ -375,6 +413,7 @@ def regles_actives(params):
         NOIR_TUE_JAUNE: params["s"],          # (6) --s
         JAUNE_TUE_NOIR: params["s"],          # (7) --s
         NOIR_NAIT_A_DISTANCE: params["lX"],   # (8) --lX
+        BLESSURE: params["lB"],               # (9) --lB
     }
 
     # 2. Règles actives seulement
@@ -518,20 +557,67 @@ def vers_image_carre(grille):
     return grille
 
 
+def d2_carre(di, dj):
+    """
+    Distance² (en cases) d'un décalage (di, dj) sur le réseau carré.
+
+    Paramètres
+    ----------
+    di, dj : int
+        Décalage en lignes et en colonnes.
+
+    Renvoie
+    -------
+    d2 : int
+        di² + dj².
+    """
+    return di * di + dj * dj
+
+
 # 7. Réseaux : tout ce qui dépend de la géométrie de la peau, lu par les
 #    règles et par l'image. Le réseau carré est celui de l'article.
 #      voisins         : décalages (di, dj) des voisins directs ;
+#      d2              : distance² d'un décalage (di, dj), pour la blessure ;
 #      case_a_distance : case à distance h, pour la règle (8) ;
 #      vers_image      : image de la grille pour plt.imshow ;
 #      aspect          : rapport hauteur / largeur d'un pixel de l'image.
 RESEAUX = {
     "carre": {
         "voisins": VOISINS_CARRE,
+        "d2": d2_carre,
         "case_a_distance": case_a_distance,
         "vers_image": vers_image_carre,
         "aspect": 1.0,
     },
 }
+
+
+def disque(d2, R):
+    """
+    Décalages de toutes les cases à distance <= R de la case (0, 0), centre
+    compris : le disque D_R de la blessure, calculé une fois par run.
+
+    On parcourt le carré |di|, |dj| <= ceil(R) + 1, qui contient le disque
+    sur le réseau carré, et on garde les décalages avec d2(di, dj) <= R².
+    Le disque autour de (i, j) est alors grille[(i + DI) % L, (j + DJ) % L].
+
+    Paramètres
+    ----------
+    d2 : fonction
+        Distance² d'un décalage, celle du réseau (RESEAUX[...]["d2"]).
+    R : float
+        Rayon du disque, en cases.
+
+    Renvoie
+    -------
+    DI, DJ : np.ndarray d'entiers, forme (n,)
+        Décalages en lignes et en colonnes des n cases du disque.
+    """
+    n = int(math.ceil(R)) + 1
+    decalages = [(di, dj) for di in range(-n, n + 1) for dj in range(-n, n + 1) if d2(di, dj) <= R * R]
+    DI = np.array([di for di, dj in decalages])
+    DJ = np.array([dj for di, dj in decalages])
+    return DI, DJ
 
 
 def naissance_jaune(grille, i, j, modele, rng):
@@ -604,6 +690,18 @@ def noir_nait_a_distance(grille, i, j, modele, rng):
     return False
 
 
+def blessure(grille, i, j, modele, rng):
+    """
+    (9) blessure : la case (i, j) et toutes celles à distance <= R
+    deviennent VIDE, quel que soit leur état (bords périodiques). Le masque
+    des iridophores n'est pas touché. Ne tire rien.
+    """
+    DI, DJ = modele["disque"]
+    L = grille.shape[0]
+    grille[(i + DI) % L, (j + DJ) % L] = VIDE
+    return True
+
+
 # 8. Table règle -> action : la fonction qui applique chaque règle
 ACTIONS = {
     NAISSANCE_JAUNE: naissance_jaune,
@@ -613,6 +711,7 @@ ACTIONS = {
     NOIR_TUE_JAUNE: noir_tue_jaune,
     JAUNE_TUE_NOIR: jaune_tue_noir,
     NOIR_NAIT_A_DISTANCE: noir_nait_a_distance,
+    BLESSURE: blessure,
 }
 
 
@@ -629,7 +728,9 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
       - (8) noir naît à distance : case VIDE, hors iridophores
         (noir_interdit[i, j] faux) et case à distance h JAUNE ;
       - avec --contact, (2'), (3') et (8') : les naissances demandent en
-        plus qu'un voisin direct de la case soit occupé (contact_ok).
+        plus qu'un voisin direct de la case soit occupé (contact_ok) ;
+      - (9) blessure : le disque de rayon R autour de la case devient VIDE,
+        toujours possible.
 
     Sinon la tentative est ratée et la grille n'est pas modifiée. Le
     voisin (règles 6 et 7) ou la case à distance (règle 8) n'est tiré que
@@ -649,7 +750,8 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
         simulation_peau : "h" (portée de l'interaction à distance),
         "noir_interdit" (masque des iridophores, voir masque_iridophores),
         "contact" (option --contact), "voisins" et "case_a_distance"
-        (ceux du réseau, voir RESEAUX).
+        (ceux du réseau, voir RESEAUX), "disque" (décalages (DI, DJ) du
+        disque de la blessure, voir disque ; None sans blessure).
     rng : random.Random
         Générateur aléatoire.
 
@@ -661,16 +763,51 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
     return ACTIONS[regle](grille, i, j, modele, rng)
 
 
+def blessure_unique(grille, params, modele, pas):
+    """
+    Blessure unique de --tB, faite par simulation_peau au pas round(tB L²),
+    avant le tirage de ce pas.
+
+    La grille est d'abord sauvegardée dans grille_avant_blessure.npy (écrit
+    sous un nom temporaire puis renommé, comme grille.npy), puis le disque
+    de rayon R centré en (L // 2, L // 2) est vidé comme par la règle (9).
+
+    Paramètres
+    ----------
+    grille : np.ndarray, forme (L, L)
+        État de la peau, modifié sur place.
+    params : dict
+        Paramètres du run.
+    modele : dict
+        Données lues par les règles (voir appliquer_regle), dont "disque".
+    pas : int
+        Pas de la blessure, pour le message du journal.
+    """
+    dossier = params["sortie"]
+    os.makedirs(dossier, exist_ok=True)
+    np.save(os.path.join(dossier, "grille_avant_blessure.tmp.npy"), grille)
+    os.replace(os.path.join(dossier, "grille_avant_blessure.tmp.npy"),
+               os.path.join(dossier, "grille_avant_blessure.npy"))
+
+    L = params["L"]
+    blessure(grille, L // 2, L // 2, modele, None)
+    print(f"Blessure au centre : pas {pas}, t = {pas / L**2:.0f}", flush=True)
+
+
 def simulation_peau(grille, params, pas_faits, rng):
     """
     Boucle Monte Carlo : fait les pas restants, de pas_faits à n_pas.
 
     Une fois au début : les données lues par les règles (modele : le
     masque des iridophores, construit avec masque_iridophores(L, bande),
-    l'option --contact, les voisins et la case à distance du réseau) et le
-    dictionnaire des règles actives avec leur probabilité (regles_actives).
-    À chaque pas : tirer une case (i, j) uniforme, tirer une règle,
-    l'appliquer si possible. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est
+    l'option --contact, les voisins et la case à distance du réseau, le
+    disque de la blessure de rayon R = alpha h) et le dictionnaire des
+    règles actives avec leur probabilité (regles_actives). À chaque pas :
+    tirer une case (i, j) uniforme, tirer une règle, l'appliquer si
+    possible. Avec --tB, au pas round(tB L²) et avant ce tirage, la
+    blessure unique au centre (blessure_unique) : la boucle reprenant à
+    pas_faits, elle n'est faite qu'une fois, même si le run est repris ou
+    prolongé. Tous les PAS_ENTRE_SAUVEGARDES pas, le run est
     sauvegardé avec sauvegarder_run pour pouvoir être relancé, sauf au
     dernier pas : la sauvegarde finale est faite par le programme principal.
 
@@ -706,22 +843,32 @@ def simulation_peau(grille, params, pas_faits, rng):
         "contact": params["contact"],
         "voisins": reseau["voisins"],
         "case_a_distance": reseau["case_a_distance"],
+        "disque": None,
     }
+    if params["lB"] > 0 or params["tB"] is not None:
+        modele["disque"] = disque(reseau["d2"], params["alpha"] * params["h"])
 
     # 2. Règles actives et probabilité de choisir chacune
     proba = regles_actives(params)
 
-    # 3. Boucle Monte Carlo
+    # 3. Pas de la blessure unique (-1 sans --tB : jamais atteint)
+    pas_blessure = round(params["tB"] * L**2) if params["tB"] is not None else -1
+
+    # 4. Boucle Monte Carlo
     for pas in range(pas_faits, params["n_pas"]):
-        # a. Tirage d'une case et d'une règle
+        # a. Blessure unique au centre, avant le tirage de ce pas
+        if pas == pas_blessure:
+            blessure_unique(grille, params, modele, pas)
+
+        # b. Tirage d'une case et d'une règle
         i = int(rng.random() * L)
         j = int(rng.random() * L)
         regle = tirer_regle(proba, rng)
 
-        # b. Application de la règle si la configuration le permet
+        # c. Application de la règle si la configuration le permet
         appliquer_regle(grille, i, j, regle, modele, rng)
 
-        # c. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
+        # d. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
         if (pas + 1) % PAS_ENTRE_SAUVEGARDES == 0 and pas + 1 < params["n_pas"]:
             sauvegarder_run(grille, params, pas + 1, rng)
 
