@@ -61,6 +61,8 @@ graph TD
 | `simulation.py` | nœud de calcul | Un run : simulation, sauvegarde régulière, reprise |
 | `04_merge_results.py` | frontale | Rassemble les `params.json` de tous les runs dans un CSV |
 | `timeline.py` (racine) | frontale ou en local | GIF et planche d'un run lancé avec `--historique` |
+| `05_tests_extensions.sh` | frontale | Tests des extensions : chunks dans `params_chunks_tests/`, Job Array, puis `06_timelines.slurm` |
+| `06_timelines.slurm` | nœud de calcul | GIF et planche de chaque run avec historique, une fois les runs finis |
 
 ## 2. Découpage en tâches : TASK_ID → chunk
 
@@ -88,7 +90,7 @@ flowchart LR
     X --> CN --> TN
 ```
 
-Ordre des lignes : h varie le plus lentement, puis lX, puis bande, puis la graine. Avec les valeurs par défaut (19 h × 30 lX × 1 bande × 3 graines = 1710 runs), on obtient 171 chunks, soit `--array=1-171%40` : bien en dessous de la limite de taille des Job Arrays.
+Ordre des lignes : h varie le plus lentement, puis lX, puis bande, puis la graine. Avec les valeurs par défaut, celles de la Fig. 2 (3 h × 4 lX × 1 bande × 1 graine = 12 runs), on obtient 2 chunks, soit `--array=1-2%40`.
 
 ## 3. Un run : `simulation.py`
 

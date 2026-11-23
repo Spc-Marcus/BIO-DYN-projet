@@ -23,7 +23,7 @@ python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --historique   # envi
 python timeline.py out/L50_h8_lX2.5_b0_g0                                  # GIF et planche
 ```
 
-Le run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L50_h8_lX2.5_b0_g0/`, et une grille tous les `PAS_ENTRE_SAUVEGARDES` pas dans `historique/` avec `--historique`. Relancer la même commande reprend un run interrompu et ne refait pas un run terminé.
+Le run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L50_h8_lX2.5_b0_g0/`, et avec `--historique` une grille tous les `PAS_ENTRE_SAUVEGARDES` pas dans `historique/`, plus une toutes les 5 u.t. pendant 500 u.t. au départ et après chaque blessure. Relancer la même commande reprend un run interrompu et ne refait pas un run terminé.
 
 ## Options du modèle
 
@@ -46,10 +46,13 @@ python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --reseau hex --contac
 Depuis la racine du projet :
 
 ```bash
-bash slurm_pipeline/01_prepare_chunks.sh --h-start 2 --h-end 20 --h-step 2   # runs et chunks
+bash slurm_pipeline/01_prepare_chunks.sh                                     # runs de la Fig. 2 et chunks
 # options du modèle pour tous les runs : --extra "--reseau hex --contact --rho0 0.01"
 bash slurm_pipeline/03_submit_all.sh                                         # Job Array (et relance)
 python slurm_pipeline/04_merge_results.py                                    # paramètres et état des runs
+bash slurm_pipeline/05_tests_extensions.sh                                   # tests des extensions, avec GIF
 ```
+
+Valeurs des tests et raisons : [slurm_pipeline/doc/tests_extensions.md](slurm_pipeline/doc/tests_extensions.md).
 
 Exemple complet pas à pas : [slurm_pipeline/doc/exemple.md](slurm_pipeline/doc/exemple.md).

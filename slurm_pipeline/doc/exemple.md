@@ -4,14 +4,14 @@ Objectif : lancer les simulations de la Fig. 2 de l'article, de la connexion au 
 
 | Paramètre | Valeurs | Option de `01_prepare_chunks.sh` |
 |---|---|---|
-| L | 100 | `--L 100` |
-| h | 5, 10, 15 | `--h-start 5 --h-end 15 --h-step 5` |
-| lX | 0.5, 1.5, 2.5, 3.5 | `--lx-start 0.5 --lx-end 3.5 --lx-step 1` |
+| L | 100 | défaut (`--L 100`) |
+| h | 5, 10, 15 | défaut (`--h-start 5 --h-end 15 --h-step 5`) |
+| lX | 0.5, 1.5, 2.5, 3.5 | défaut (`--lx-start 0.5 --lx-end 3.5 --lx-step 1`) |
 | bande | 0 (pas d'iridophores) | défaut |
-| graines | 0, 1 | `--graines 2` |
-| n_pas | 100000 × L² = 10⁹ | défaut |
+| graines | 0, 1 | `--graines 2` (défaut : 1) |
+| n_pas | 10⁹ | défaut |
 
-Soit 3 × 4 × 1 × 2 = **24 runs**, répartis en **3 chunks**, donc **3 tâches Slurm**.
+Soit 3 × 4 × 1 × 2 = **24 runs**, répartis en **3 chunks**, donc **3 tâches Slurm**. Les valeurs étant celles par défaut, `bash slurm_pipeline/01_prepare_chunks.sh --graines 2` suffit ; les commandes ci-dessous les donnent explicitement.
 
 ```mermaid
 flowchart LR
@@ -276,7 +276,7 @@ bash slurm_pipeline/03_submit_all.sh
 
 ## 9. Variante — garder l'historique et faire un GIF
 
-Par défaut, chaque sauvegarde écrase la précédente : on ne garde que la dernière grille. Avec `--historique` au lancement, chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` = 10⁷ pas) garde aussi une copie de la grille, ce qui permet de suivre la formation du motif.
+Par défaut, chaque sauvegarde écrase la précédente : on ne garde que la dernière grille. Avec `--historique` au lancement, chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` = 10⁷ pas) garde aussi une copie de la grille, ainsi qu'une grille toutes les 5 u.t. pendant les 500 premières u.t. (et après chaque blessure), ce qui permet de suivre la formation du motif.
 
 ```mermaid
 flowchart LR
@@ -307,15 +307,18 @@ Le run écrit, en plus des fichiers habituels :
 
 ```
 out/L100_h16_lX2.5_b0_g0/historique/
+├── grille_000000050000.npz     # t = 5
+├── grille_000000100000.npz     # t = 10
+├── …
+├── grille_000005000000.npz     # t = 500
 ├── grille_000010000000.npz     # t = 1000
-├── grille_000020000000.npz     # t = 2000
 ├── …
 └── grille_001000000000.npz     # t = 100000 (fin du run)
 ```
 
 Chaque fichier contient deux matrices binaires, `jaune` et `noir`, compactées (1 bit par case) puis compressées ; le vide est « ni jaune ni noir ». Les motifs ayant de grandes zones uniformes, une grille de L = 200 tient en 5 à 8 Ko au lieu de 40 Ko en `uint8`, pour moins d'1 ms d'écriture par sauvegarde : négligeable face aux 10⁷ pas qui les séparent.
 
-Pour ce run (L = 100, 100 grilles), cela fait environ 0,2 Mo. Pour le balayage par défaut (L = 200, 4·10⁹ pas), ce serait 400 grilles par run, soit environ 2 Mo par run et 4 Go pour les 1710 runs : on active donc plutôt l'historique pour quelques configurations. En cas de relance, remettre `--historique` pour que l'historique continue.
+Pour ce run (L = 100, 200 grilles), cela fait environ 0,4 Mo. En cas de relance, remettre `--historique` pour que l'historique continue.
 
 Ensuite, sur la frontale ou en local après `scp -r` du dossier du run :
 
@@ -324,7 +327,7 @@ python timeline.py out/L100_h16_lX2.5_b0_g0
 ```
 
 ```
-100 instantanés, de t = 1000.0 à t = 100000.0
+200 instantanés, de t = 50000 à t = 1000000000
 Écrits : out/L100_h16_lX2.5_b0_g0/timeline.gif et out/L100_h16_lX2.5_b0_g0/timeline.png
 ```
 
@@ -354,10 +357,10 @@ Les runs vont dans `out/L100_h16_lX2.5_b0_g0_hex_c_r0.01/` et `..._g1_hex_c_r0.0
 
 ```bash
 . /local/env/envconda.sh && conda create -n biodyn python numpy matplotlib     # une seule fois
-bash slurm_pipeline/01_prepare_chunks.sh --L 100 --h-start 5 --h-end 15 --h-step 5 \
-    --lx-start 0.5 --lx-end 3.5 --lx-step 1 --graines 2                     # étape 1
+bash slurm_pipeline/01_prepare_chunks.sh --graines 2                         # étape 1 (Fig. 2)
 bash slurm_pipeline/03_submit_all.sh                                          # étape 2 (et relance)
 squeue -u $USER                                                               # suivi
 conda activate biodyn && python slurm_pipeline/04_merge_results.py           # étape 3
 python timeline.py out/L100_h16_lX2.5_b0_g0                                    # GIF d'un run lancé avec --historique
+bash slurm_pipeline/05_tests_extensions.sh                                     # tests des extensions (doc/tests_extensions.md)
 ```
