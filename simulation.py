@@ -10,7 +10,7 @@ seules celles de taux non nul sont tirées. Par défaut, c'est le modèle de
 l'article : règles (2), (6), (7) et (8). Les iridophores sont un masque de
 cases où le noir ne peut pas naître (Fig. 1b-c).
 
-Extensions, désactivées par défaut : blessure (--lB, --alpha, --tB),
+Extensions, désactivées par défaut : blessure (--lB, --alpha, --pas_blessure),
 naissance au contact (--contact, --rho0, --fX0), réseau hexagonal
 (--reseau hex).
 
@@ -23,7 +23,7 @@ Utilisation :
     python simulation.py --h 16 --lX 2.5
     python simulation.py --h 16 --lX 2.5 --historique                  # garde des grilles pour un GIF
     python simulation.py --h 16 --lX 2.5 --reseau hex --contact --rho0 0.01
-    python simulation.py --h 16 --lX 2.5 --tB 7000 --n_pas 800000000   # blessure au centre à t = 7000
+    python simulation.py --h 16 --lX 2.5 --pas_blessure 70000000 --n_pas 800000000   # blessure au centre au pas 7·10⁷
 """
 
 import argparse
@@ -63,18 +63,18 @@ DEFAUTS = {
     "bX": BX, "bM": 0.0, "dX": 0.0, "dM": 0.0, "s": S,   # taux des règles (2) à (7)
     "reseau": "carre",                                   # ou "hex"
     "contact": False, "rho0": 0.0, "fX0": 1.0,           # naissance au contact et départ
-    "lB": 0.0, "alpha": 1.0, "tB": None,                 # blessure
+    "lB": 0.0, "alpha": 1.0, "pas_blessure": None,       # blessure
 }
 
 # 5. Nombre de pas entre deux sauvegardes (pour pouvoir relancer)
 PAS_ENTRE_SAUVEGARDES = 10**7
 
-# 6. Historique (--historique) : une grille à chaque sauvegarde, plus une grille toutes les
-#    DT_RECONSTRUCTION u.t. pendant DUREE_RECONSTRUCTION u.t. au départ (peau vide) et après
+# 6. Historique (--historique) : une grille à chaque sauvegarde, plus une grille tous les
+#    PAS_ENTRE_GRILLES pas pendant PAS_RECONSTRUCTION pas au départ (peau vide) et après
 #    chaque blessure, pour voir la reconstruction. Mesuré à L = 100 : la zone blessée se
-#    remplit en 10 à 40 u.t. et ne se distingue plus du reste du motif après 200 à 500 u.t.
-DUREE_RECONSTRUCTION = 500
-DT_RECONSTRUCTION = 5
+#    remplit en 1 à 4·10⁵ pas et ne se distingue plus du reste du motif après 2 à 5·10⁶ pas.
+PAS_RECONSTRUCTION = 5 * 10**6
+PAS_ENTRE_GRILLES = 5 * 10**4
 
 # 7. Voisins directs : réseau carré (ne pas changer l'ordre, il fixe les tirages),
 #    réseau hexagonal = les mêmes plus une diagonale
@@ -112,16 +112,16 @@ def lire_arguments():
     parser.add_argument("--fX0", type=float, default=DEFAUTS["fX0"], help="part de jaunes parmi ces cases")
     parser.add_argument("--lB", type=float, default=DEFAUTS["lB"], help="(9) blessure")
     parser.add_argument("--alpha", type=float, default=DEFAUTS["alpha"], help="rayon de la blessure R = alpha h")
-    parser.add_argument("--tB", type=float, default=DEFAUTS["tB"], help="temps d'une blessure unique au centre")
+    parser.add_argument("--pas_blessure", type=int, default=DEFAUTS["pas_blessure"], help="pas d'une blessure unique au centre")
     args = parser.parse_args()
 
     # 3. Vérifications
     if args.contact and args.rho0 == 0:
         parser.error("--contact demande --rho0 > 0 (sinon la peau vide le reste)")
-    if (args.lB > 0 or args.tB is not None) and not 1 <= args.alpha * args.h < args.L / 2:
+    if (args.lB > 0 or args.pas_blessure is not None) and not 1 <= args.alpha * args.h < args.L / 2:
         parser.error("avec une blessure, il faut 1 <= alpha h < L/2")
-    if args.tB is not None and round(args.tB * args.L**2) >= args.n_pas:
-        parser.error("la blessure unique doit avoir lieu pendant le run : tB L² < n_pas")
+    if args.pas_blessure is not None and args.pas_blessure >= args.n_pas:
+        parser.error("la blessure unique doit avoir lieu pendant le run : pas_blessure < n_pas")
     return args
 
 
@@ -151,10 +151,10 @@ def nom_dossier(params):
     # 3. Blessure
     if params["lB"] != DEFAUTS["lB"]:
         sortie += f"_B{params['lB']}"
-    if (params["lB"] > 0 or params["tB"] is not None) and params["alpha"] != DEFAUTS["alpha"]:
+    if (params["lB"] > 0 or params["pas_blessure"] is not None) and params["alpha"] != DEFAUTS["alpha"]:
         sortie += f"_a{params['alpha']}"
-    if params["tB"] is not None:
-        sortie += f"_tB{params['tB']}"
+    if params["pas_blessure"] is not None:
+        sortie += f"_pB{params['pas_blessure']}"
     return sortie
 
 
@@ -446,7 +446,7 @@ def simulation_peau(grille, params, pas_faits, rng):
     """
     Boucle Monte Carlo de pas_faits à n_pas : à chaque pas, une case et une
     règle tirées au hasard. Sauvegarde tous les PAS_ENTRE_SAUVEGARDES pas, et
-    historique serré au départ et après chaque blessure (DUREE_RECONSTRUCTION).
+    historique serré au départ et après chaque blessure (PAS_RECONSTRUCTION).
     """
     # 1. Données lues par les règles
     L = params["L"]
@@ -459,19 +459,18 @@ def simulation_peau(grille, params, pas_faits, rng):
         "case_a_distance": reseau["case_a_distance"],
         "disque": None,
     }
-    if params["lB"] > 0 or params["tB"] is not None:
+    if params["lB"] > 0 or params["pas_blessure"] is not None:
         modele["disque"] = disque(reseau["d2"], params["alpha"] * params["h"])
 
     # 2. Règles actives et probabilité de choisir chacune
     proba = regles_actives(params)
 
-    # 3. Pas de la blessure unique (--tB), -1 sinon (jamais atteint)
-    pas_blessure = round(params["tB"] * L**2) if params["tB"] is not None else -1
+    # 3. Pas de la blessure unique (--pas_blessure), -1 sinon (jamais atteint)
+    pas_blessure = params["pas_blessure"] if params["pas_blessure"] is not None else -1
 
-    # 4. Historique serré : une grille tous les pas_serre pas jusqu'au pas fin_serre,
+    # 4. Historique serré : une grille tous les PAS_ENTRE_GRILLES pas jusqu'au pas fin_serre,
     #    d'abord au départ, puis après chaque blessure
-    pas_serre = DT_RECONSTRUCTION * L**2
-    fin_serre = DUREE_RECONSTRUCTION * L**2
+    fin_serre = PAS_RECONSTRUCTION
 
     # 5. Boucle Monte Carlo
     for pas in range(pas_faits, params["n_pas"]):
@@ -481,8 +480,8 @@ def simulation_peau(grille, params, pas_faits, rng):
             os.makedirs(params["sortie"], exist_ok=True)
             np.save(os.path.join(params["sortie"], "grille_avant_blessure.npy"), grille)
             blessure(grille, L // 2, L // 2, modele, rng)
-            fin_serre = pas + DUREE_RECONSTRUCTION * L**2
-            print(f"Blessure au centre : pas {pas}, t = {pas / L**2:.0f}", flush=True)
+            fin_serre = pas + PAS_RECONSTRUCTION
+            print(f"Blessure au centre au pas {pas}", flush=True)
 
         # b. Tirage d'une case et d'une règle
         i = int(rng.random() * L)
@@ -492,10 +491,10 @@ def simulation_peau(grille, params, pas_faits, rng):
         # c. Application de la règle si la configuration le permet
         appliquer_regle(grille, i, j, regle, modele, rng)
         if regle == BLESSURE:
-            fin_serre = pas + DUREE_RECONSTRUCTION * L**2
+            fin_serre = pas + PAS_RECONSTRUCTION
 
         # d. Historique serré, pour voir la reconstruction
-        if pas < fin_serre and params["historique"] and (pas + 1) % pas_serre == 0:
+        if pas < fin_serre and params["historique"] and (pas + 1) % PAS_ENTRE_GRILLES == 0:
             sauvegarder_historique(grille, params, pas + 1)
 
         # e. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
@@ -508,13 +507,12 @@ def simulation_peau(grille, params, pas_faits, rng):
 def sauvegarder_run(grille, params, pas_faits, rng):
     """
     Sauvegarde le run dans params["sortie"] : grille.npy, params.json (avec
-    pas_faits, t = pas_faits / L² et l'état du générateur), grille.png et,
-    avec --historique, historique/grille_<pas>.npz.
+    pas_faits et l'état du générateur), grille.png et, avec --historique,
+    historique/grille_<pas>.npz.
     """
     dossier = params["sortie"]
     os.makedirs(dossier, exist_ok=True)
     L = params["L"]
-    t = pas_faits / L**2
 
     # 1. Grille et paramètres, écrits dans des fichiers temporaires puis
     #    renommés : un job tué pendant l'écriture ne laisse pas de fichier à moitié écrit
@@ -522,7 +520,6 @@ def sauvegarder_run(grille, params, pas_faits, rng):
 
     infos = dict(params)
     infos["pas_faits"] = pas_faits
-    infos["t"] = t
     infos["etat_generateur"] = rng.getstate()
     with open(os.path.join(dossier, "params.tmp.json"), "w") as f:
         json.dump(infos, f, indent=2)
@@ -539,7 +536,7 @@ def sauvegarder_run(grille, params, pas_faits, rng):
     if noir_interdit.any():
         plt.imshow(np.ma.masked_where(~noir_interdit, noir_interdit), cmap=ListedColormap(["silver"]),
                    alpha=0.5, interpolation="nearest", aspect=reseau["aspect"])
-    plt.title(f"L={L}, h={params['h']}, lX={params['lX']}, bande={params['bande']}, t = {t:.0f}")
+    plt.title(f"L={L}, h={params['h']}, lX={params['lX']}, bande={params['bande']}, pas = {pas_faits}")
     plt.axis("off")
     plt.savefig(os.path.join(dossier, "grille.png"), dpi=150, bbox_inches="tight")
     plt.close()
@@ -548,7 +545,7 @@ def sauvegarder_run(grille, params, pas_faits, rng):
     if params["historique"]:
         sauvegarder_historique(grille, params, pas_faits)
 
-    print(f"Sauvegarde : {pas_faits} / {params['n_pas']} pas, t = {t:.0f}", flush=True)
+    print(f"Sauvegarde : {pas_faits} / {params['n_pas']} pas", flush=True)
 
 
 def sauvegarder_historique(grille, params, pas_faits):
@@ -566,8 +563,8 @@ def sauvegarder_historique(grille, params, pas_faits):
 def charger_run(dossier):
     """
     Relit un run sauvegardé par sauvegarder_run. Renvoie params (sans
-    pas_faits, t ni etat_generateur), grille, pas_faits et le générateur
-    remis dans son état.
+    pas_faits ni etat_generateur), grille, pas_faits et le générateur remis
+    dans son état.
     """
     with open(os.path.join(dossier, "params.json")) as f:
         params = json.load(f)
@@ -579,7 +576,7 @@ def charger_run(dossier):
     rng.setstate((version, tuple(etat), gauss))
 
     pas_faits = params.pop("pas_faits")
-    params.pop("t")
+    params.pop("t", None)   # écrit par les anciennes versions
     return params, grille, pas_faits, rng
 
 

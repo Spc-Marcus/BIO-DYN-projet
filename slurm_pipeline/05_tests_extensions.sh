@@ -28,7 +28,7 @@ VARIANTES=(
     "--contact --rho0 0.01"                # naissances au contact, départ avec 1 % de jaunes
     "--lB ${LB}"                           # blessures au hasard
     "--lB ${LB} --contact --rho0 0.01"     # blessures au hasard et naissances au contact
-    "--tB 50000"                           # une seule blessure au centre, à t = 50 000
+    "--pas_blessure 500000000"             # une seule blessure au centre, au milieu du run
 )
 
 # ── Chemins ────────────────────────────────────────────────────────

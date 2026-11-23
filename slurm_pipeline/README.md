@@ -81,7 +81,7 @@ bash slurm_pipeline/03_submit_all.sh                 # sans historique
 bash slurm_pipeline/03_submit_all.sh --historique    # garde une grille à chaque sauvegarde
 ```
 
-Soumet **un seul Job Array CPU**, une tâche par chunk. Avec `--historique`, chaque run garde une copie de la grille à chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` pas), et une toutes les 5 u.t. pendant 500 u.t. au départ et après chaque blessure, dans `out/<run>/historique/`, pour en faire un GIF ou une timeline avec `timeline.py`. Surveiller l'avancement :
+Soumet **un seul Job Array CPU**, une tâche par chunk. Avec `--historique`, chaque run garde une copie de la grille à chaque sauvegarde (tous les `PAS_ENTRE_SAUVEGARDES` pas), et une tous les `PAS_ENTRE_GRILLES` pas pendant `PAS_RECONSTRUCTION` pas au départ et après chaque blessure, dans `out/<run>/historique/`, pour en faire un GIF ou une timeline avec `timeline.py`. Surveiller l'avancement :
 
 ```bash
 squeue -u $USER

@@ -114,8 +114,8 @@ taux[(9)] ← lB
 BLESSURE (9) :
     POUR CHAQUE (di, dj) DE (DI, DJ) : case((i + di) mod L, (j + dj) mod L) ← VIDE
 
-// option tB : une seule blessure au centre, dans la boucle, avant le tirage du pas
-SI pas = arrondi(tB · L²) ALORS
+// option pas_blessure : une seule blessure au centre, dans la boucle, avant le tirage du pas
+SI pas = pas_blessure ALORS
     sauvegarder la grille, puis vider le disque centré en (L div 2, L div 2)
 ```
 

@@ -23,7 +23,7 @@ python simulation.py --L 50 --h 8 --lX 2.5 --n_pas 5000000 --historique   # envi
 python timeline.py out/L50_h8_lX2.5_b0_g0                                  # GIF et planche
 ```
 
-Le run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L50_h8_lX2.5_b0_g0/`, et avec `--historique` une grille tous les `PAS_ENTRE_SAUVEGARDES` pas dans `historique/`, plus une toutes les 5 u.t. pendant 500 u.t. au départ et après chaque blessure. Relancer la même commande reprend un run interrompu et ne refait pas un run terminé.
+Le run écrit `grille.npy`, `params.json` et `grille.png` dans `out/L50_h8_lX2.5_b0_g0/`, et avec `--historique` une grille tous les `PAS_ENTRE_SAUVEGARDES` pas dans `historique/`, plus une tous les `PAS_ENTRE_GRILLES` pas pendant `PAS_RECONSTRUCTION` pas au départ et après chaque blessure. Relancer la même commande reprend un run interrompu et ne refait pas un run terminé.
 
 ## Options du modèle
 
@@ -33,7 +33,7 @@ Les règles sont dans un dictionnaire règle → taux construit à partir des op
 |---|---|---|
 | `--reseau hex` | `carre` | réseau hexagonal (6 voisins), image en briques |
 | `--contact`, `--rho0`, `--fX0` | non, 0, 1 | naissances seulement au contact d'une case occupée, en partant d'une fraction `rho0` de cases occupées (dont une part `fX0` de jaunes) |
-| `--lB`, `--alpha`, `--tB` | 0, 1, aucun | blessure (9) de taux `lB` et de rayon `alpha·h` ; avec `--tB`, une seule blessure au centre au temps `tB` |
+| `--lB`, `--alpha`, `--pas_blessure` | 0, 1, aucun | blessure (9) de taux `lB` et de rayon `alpha·h` ; avec `--pas_blessure`, une seule blessure au centre à ce pas |
 
 Chaque option différente de son défaut ajoute un suffixe au dossier du run :
 
