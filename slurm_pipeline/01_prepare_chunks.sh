@@ -3,10 +3,10 @@
 #             [--h-start A] [--h-end B] [--h-step S] \
 #             [--lx-start A] [--lx-end B] [--lx-step S] \
 #             [--bande-start A] [--bande-end B] [--bande-step S] \
-#             [--graines N] [--n-pas N]
+#             [--graines N] [--n-pas N] [--extra "OPTIONS"]
 #
-#   Génère une ligne "L h lX bande graine n_pas" par run (toutes les
-#   combinaisons de h, lX, bande et graine) et les répartit dans params_chunks/chunk_1.txt,
+#   Génère une ligne "L h lX bande graine n_pas [options]" par run (toutes
+#   les combinaisons de h, lX, bande et graine) et les répartit dans params_chunks/chunk_1.txt,
 #   chunk_2.txt, … (CHUNK_SIZE lignes max). Une tâche Slurm = un chunk.
 #
 #   --L         Taille de la grille. Défaut : 200
@@ -22,6 +22,9 @@
 #   --bande-step   Pas du balayage de la bande. Défaut : 1
 #   --graines   Nombre de répétitions (graines 0 à N-1). Défaut : 3
 #   --n-pas     Nombre de pas par run. Défaut : 100000 × L²
+#   --extra     Options du modèle passées à simulation.py pour tous les runs,
+#               recopiées en fin de ligne, entre guillemets. Exemple :
+#               --extra "--reseau hex --contact --rho0 0.01". Défaut : aucune
 
 # ── Paramètre configurable ─────────────────────────────────────────
 CHUNK_SIZE=10
@@ -52,6 +55,7 @@ BANDE_END="${DEFAULT_BANDE_END}"
 BANDE_STEP="${DEFAULT_BANDE_STEP}"
 GRAINES="${DEFAULT_GRAINES}"
 N_PAS=""
+EXTRA=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -67,9 +71,10 @@ while [[ $# -gt 0 ]]; do
         --bande-step)  BANDE_STEP="$2";  shift 2 ;;
         --graines)  GRAINES="$2";  shift 2 ;;
         --n-pas)    N_PAS="$2";    shift 2 ;;
+        --extra)    EXTRA="$2";    shift 2 ;;
         *)
             echo "[LOG: Erreur] Option inconnue : $1" >&2
-            echo "Usage : bash 01_prepare_chunks.sh [--L N] [--h-start A] [--h-end B] [--h-step S] [--lx-start A] [--lx-end B] [--lx-step S] [--bande-start A] [--bande-end B] [--bande-step S] [--graines N] [--n-pas N]" >&2
+            echo "Usage : bash 01_prepare_chunks.sh [--L N] [--h-start A] [--h-end B] [--h-step S] [--lx-start A] [--lx-end B] [--lx-step S] [--bande-start A] [--bande-end B] [--bande-step S] [--graines N] [--n-pas N] [--extra \"OPTIONS\"]" >&2
             exit 1
             ;;
     esac
@@ -92,13 +97,13 @@ mapfile -t H_VALUES     < <(LC_ALL=C seq "${H_START}"     "${H_STEP}"     "${H_E
 mapfile -t LX_VALUES    < <(LC_ALL=C seq "${LX_START}"    "${LX_STEP}"    "${LX_END}")
 mapfile -t BANDE_VALUES < <(LC_ALL=C seq "${BANDE_START}" "${BANDE_STEP}" "${BANDE_END}")
 
-# ── Une ligne par run ─────────────────────────────────────────────
+# ── Une ligne par run, options du modèle en fin de ligne ───────────
 RUNS=()
 for H in "${H_VALUES[@]}"; do
     for LX in "${LX_VALUES[@]}"; do
         for BANDE in "${BANDE_VALUES[@]}"; do
             for (( G=0; G<GRAINES; G++ )); do
-                RUNS+=("${L} ${H} ${LX} ${BANDE} ${G} ${N_PAS}")
+                RUNS+=("${L} ${H} ${LX} ${BANDE} ${G} ${N_PAS}${EXTRA:+ ${EXTRA}}")
             done
         done
     done
@@ -111,7 +116,7 @@ if [[ $TOTAL -eq 0 ]]; then
 fi
 
 NUM_CHUNKS=$(( (TOTAL + CHUNK_SIZE - 1) / CHUNK_SIZE ))
-echo "[LOG: Préparation] L=${L} h=[${H_START}..${H_END}/${H_STEP}] lX=[${LX_START}..${LX_END}/${LX_STEP}] bande=[${BANDE_START}..${BANDE_END}/${BANDE_STEP}] graines=${GRAINES} n_pas=${N_PAS}" >&2
+echo "[LOG: Préparation] L=${L} h=[${H_START}..${H_END}/${H_STEP}] lX=[${LX_START}..${LX_END}/${LX_STEP}] bande=[${BANDE_START}..${BANDE_END}/${BANDE_STEP}] graines=${GRAINES} n_pas=${N_PAS}${EXTRA:+ options=${EXTRA}}" >&2
 echo "[LOG: Préparation] ${TOTAL} run(s) → ${NUM_CHUNKS} chunk(s) de ${CHUNK_SIZE} max" >&2
 
 # ── Écriture des chunks ───────────────────────────────────────────
