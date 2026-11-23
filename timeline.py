@@ -5,14 +5,15 @@ Indépendant de Slurm : se lance en local (après avoir rapatrié out/) ou sur
 la frontale, sur le dossier d'un run lancé avec --historique.
 
 Entrée : out/<run>/historique/grille_<pas>.npz, une grille tous les
-PAS_ENTRE_SAUVEGARDES pas, stockée en deux matrices binaires compactées et
+PAS_ENTRE_SAUVEGARDES pas, plus une tous les PAS_ENTRE_GRILLES pas au
+départ et après chaque blessure, stockée en deux matrices binaires compactées et
 compressées "jaune" et "noir" (voir sauvegarder_run dans simulation.py).
 Un run sur réseau hexagonal est dessiné en briques, comme grille.png.
 
 Sorties, écrites dans le dossier du run :
   - timeline.gif : animation de la grille au cours du temps ;
   - timeline.png : planche de quelques instants régulièrement espacés, avec
-                   le temps t = pas / L² sous chaque image.
+                   le pas sous chaque image.
 
 Dépendances : numpy et matplotlib (le GIF est écrit avec Pillow, installé
 avec matplotlib). Les couleurs, les états et les réseaux viennent de
@@ -157,18 +158,18 @@ def en_couleurs(grilles):
     return palette[grilles]
 
 
-def creer_gif(images, temps, chemin, fps, aspect=1.0):
+def creer_gif(images, pas, chemin, fps, aspect=1.0):
     """
-    Écrit l'animation des images, avec le temps t en titre de chaque image
-    (arrondi à l'unité). Une image du GIF par grille de l'historique,
-    écrite avec matplotlib.animation et PillowWriter.
+    Écrit l'animation des images, avec le pas en titre de chaque image.
+    Une image du GIF par grille de l'historique, écrite avec
+    matplotlib.animation et PillowWriter.
 
     Paramètres
     ----------
     images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB, dans l'ordre du temps.
-    temps : np.ndarray, forme (n,)
-        Temps t = pas / L² de chaque image.
+    pas : np.ndarray, forme (n,)
+        Pas de chaque image.
     chemin : Path
         Fichier GIF à écrire.
     fps : int
@@ -178,13 +179,13 @@ def creer_gif(images, temps, chemin, fps, aspect=1.0):
     """
     fig = plt.figure(figsize=(5, 5))
     image = plt.imshow(images[0], interpolation="nearest", aspect=aspect)
-    titre = plt.title(f"t = {temps[0]:.0f}")
+    titre = plt.title(f"pas = {pas[0]}")
     plt.axis("off")
 
     # Image k de l'animation : on change la grille et le titre
     def mise_a_jour(k):
         image.set_data(images[k])
-        titre.set_text(f"t = {temps[k]:.0f}")
+        titre.set_text(f"pas = {pas[k]}")
         return image, titre
 
     anim = animation.FuncAnimation(fig, mise_a_jour, frames=len(images))
@@ -192,10 +193,10 @@ def creer_gif(images, temps, chemin, fps, aspect=1.0):
     plt.close(fig)
 
 
-def creer_planche(images, temps, chemin, n_images, aspect=1.0):
+def creer_planche(images, pas, chemin, n_images, aspect=1.0):
     """
     Écrit une planche de n_images instants régulièrement espacés, du premier
-    au dernier, côte à côte, avec le temps t sous chaque image. Les indices
+    au dernier, côte à côte, avec le pas sous chaque image. Les indices
     sont arrondis puis dédoublonnés : s'il y a peu de grilles, la planche
     peut en montrer moins que n_images.
 
@@ -203,8 +204,8 @@ def creer_planche(images, temps, chemin, n_images, aspect=1.0):
     ----------
     images : np.ndarray uint8, forme (n, L, L, 3)
         Images RGB, dans l'ordre du temps.
-    temps : np.ndarray, forme (n,)
-        Temps t = pas de chaque image.
+    pas : np.ndarray, forme (n,)
+        Pas de chaque image.
     chemin : Path
         Fichier PNG à écrire.
     n_images : int
@@ -219,7 +220,7 @@ def creer_planche(images, temps, chemin, n_images, aspect=1.0):
     fig, axes = plt.subplots(1, len(indices), figsize=(2.5 * len(indices), 3), squeeze=False)
     for ax, k in zip(axes[0], indices):
         ax.imshow(images[k], interpolation="nearest", aspect=aspect)
-        ax.set_xlabel(f"t = {temps[k]:.0f}")
+        ax.set_xlabel(f"pas = {pas[k]}")
         ax.set_xticks([])
         ax.set_yticks([])
 
@@ -232,14 +233,13 @@ if __name__ == "__main__":
     args = lire_arguments()
     dossier = Path(args.dossier)
     pas, grilles = charger_instantanes(lister_instantanes(dossier))
-    temps = pas 
-    print(f"{len(pas)} instantanés, de t = {temps[0]} à t = {temps[-1]}")
+    print(f"{len(pas)} instantanés, du pas {pas[0]} au pas {pas[-1]}")
 
     # 2. Images en couleurs, dessinées sur le réseau du run (briques en hexagonal)
     reseau = lire_reseau(dossier)
     images = en_couleurs(np.array([reseau["vers_image"](g) for g in grilles]))
 
     # 3. GIF et planche, dans le dossier du run
-    creer_gif(images, temps, dossier / "timeline.gif", args.fps, reseau["aspect"])
-    creer_planche(images, temps, dossier / "timeline.png", args.n_images, reseau["aspect"])
+    creer_gif(images, pas, dossier / "timeline.gif", args.fps, reseau["aspect"])
+    creer_planche(images, pas, dossier / "timeline.png", args.n_images, reseau["aspect"])
     print(f"Écrits : {dossier / 'timeline.gif'} et {dossier / 'timeline.png'}")

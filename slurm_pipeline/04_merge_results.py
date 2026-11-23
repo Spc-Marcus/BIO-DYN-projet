@@ -9,10 +9,10 @@ Entrées : les params.json écrits par simulation.py, un par dossier de run
 
 Sortie : une ligne par run, avec les colonnes
     L, h, lX, bande, graine, bX, bM, dX, dM, s, reseau, contact, rho0, fX0,
-    lB, alpha, tB, n_pas, pas_faits, t, termine, dossier
+    lB, alpha, pas_blessure, n_pas, pas_faits, termine, dossier
 où termine vaut True si pas_faits >= n_pas. Les runs non terminés sont à
 relancer avec 03_submit_all.sh. Pour un run lancé avant les options du
-modèle (bX à tB), elles valent leur défaut.
+modèle (bX à pas_blessure), elles valent leur défaut.
 """
 
 import argparse
@@ -34,11 +34,11 @@ PROJECT_ROOT = SCRIPT_DIR.parent
 OUT_DIR      = PROJECT_ROOT / "out"
 OUTPUT_PATH  = PROJECT_ROOT / "results" / "final_runs.csv"
 COLUMNS = ["L", "h", "lX", "bande", "graine", "bX", "bM", "dX", "dM", "s", "reseau", "contact", "rho0", "fX0",
-           "lB", "alpha", "tB", "n_pas", "pas_faits", "t", "termine", "dossier"]
+           "lB", "alpha", "pas_blessure", "n_pas", "pas_faits", "termine", "dossier"]
 
 # Valeurs par défaut des options du modèle, les mêmes que DEFAUTS dans simulation.py
 DEFAUTS = {"bX": 1.0, "bM": 0.0, "dX": 0.0, "dM": 0.0, "s": 1.0, "reseau": "carre", "contact": False,
-           "rho0": 0.0, "fX0": 1.0, "lB": 0.0, "alpha": 1.0, "tB": None}
+           "rho0": 0.0, "fX0": 1.0, "lB": 0.0, "alpha": 1.0, "pas_blessure": None}
 
 
 def lire_arguments():

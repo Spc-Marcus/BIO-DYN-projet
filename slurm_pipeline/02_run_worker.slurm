@@ -11,7 +11,8 @@
 # historique = 1 : les runs sont lancés avec --historique (une grille gardée
 # à chaque sauvegarde). Vide ou absent : pas d'historique.
 #
-# La tâche N traite params_chunks/chunk_N.txt : une ligne
+# La tâche N traite params_chunks/chunk_N.txt (ou ${CHUNKS_DIR}/chunk_N.txt si la
+# variable CHUNKS_DIR est donnée, comme par 05_tests_extensions.sh) : une ligne
 # "L h lX bande graine n_pas [options]" par run, lancés l'un après l'autre
 # avec simulation.py. Les options du modèle (le reste de la ligne, écrit par
 # 01_prepare_chunks.sh --extra) sont passées telles quelles. Un run déjà
@@ -31,7 +32,7 @@ mkdir -p out logs
 
 # ── Chunk de la tâche ─────────────────────────────────────────────
 CHUNK_ID=${SLURM_ARRAY_TASK_ID}
-CHUNK_FILE="params_chunks/chunk_${CHUNK_ID}.txt"
+CHUNK_FILE="${CHUNKS_DIR:-params_chunks}/chunk_${CHUNK_ID}.txt"
 HISTORIQUE=${1:-}
 
 if [[ -z "$CHUNK_ID" || ! -f "$CHUNK_FILE" ]]; then

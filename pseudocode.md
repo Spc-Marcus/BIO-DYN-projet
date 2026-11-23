@@ -114,8 +114,8 @@ taux[(9)] ← lB
 BLESSURE (9) :
     POUR CHAQUE (di, dj) DE (DI, DJ) : case((i + di) mod L, (j + dj) mod L) ← VIDE
 
-// option tB : une seule blessure au centre, dans la boucle, avant le tirage du pas
-SI pas = arrondi(tB · L²) ALORS
+// option pas_blessure : une seule blessure au centre, dans la boucle, avant le tirage du pas
+SI pas = pas_blessure ALORS
     sauvegarder la grille, puis vider le disque centré en (L div 2, L div 2)
 ```
 
@@ -155,13 +155,12 @@ Même matrice L × L, en coordonnées axiales : la case `(i, j)` est au point `x
 ## Balayage de paramètres (cluster)
 
 ```text
-// gen_params.py : une ligne de paramètres par simulation
-POUR lX DANS 30 valeurs entre 1.1 et 4.0
-    POUR h DE 2 À 20
-        POUR graine DE 0 À 2
-            écrire (L=200, h, lX, n_pas = 10⁵ × L², graine) dans params.txt
+// 01_prepare_chunks.sh : une ligne de paramètres par simulation (défauts = Fig. 2)
+POUR h DANS {5, 10, 15}
+    POUR lX DANS {0.5, 1.5, 2.5, 3.5}
+        écrire (L = 100, h, lX, bande = 0, graine = 0, n_pas = 10⁹) dans un paquet
 
-// sweep.sbatch : chaque tâche du job array traite un paquet de 10 lignes
+// 02_run_worker.slurm : chaque tâche du job array traite un paquet de 10 lignes
 POUR chaque ligne du paquet attribué à la tâche
     SI le fichier résultat existe déjà ALORS passer à la suivante   // reprise après plantage
     SimulationPeau(paramètres de la ligne) → sauvegarder la grille (.npy)

@@ -9,19 +9,22 @@
 #   les combinaisons de h, lX, bande et graine) et les répartit dans params_chunks/chunk_1.txt,
 #   chunk_2.txt, … (CHUNK_SIZE lignes max). Une tâche Slurm = un chunk.
 #
-#   --L         Taille de la grille. Défaut : 200
-#   --h-start   Première valeur de h. Défaut : 2
-#   --h-end     Dernière valeur de h, incluse. Défaut : 20
-#   --h-step    Pas du balayage de h. Défaut : 1
-#   --lx-start  Première valeur de lX. Défaut : 1.1
-#   --lx-end    Dernière valeur de lX, incluse. Défaut : 4.0
-#   --lx-step   Pas du balayage de lX. Défaut : 0.1
+#   Sans option, ce sont exactement les runs de la Fig. 2 de l'article : L = 100,
+#   h = 5, 10, 15, lX = 0.5, 1.5, 2.5, 3.5, 10⁹ pas, une graine (12 runs).
+#
+#   --L         Taille de la grille. Défaut : 100
+#   --h-start   Première valeur de h. Défaut : 5
+#   --h-end     Dernière valeur de h, incluse. Défaut : 15
+#   --h-step    Pas du balayage de h. Défaut : 5
+#   --lx-start  Première valeur de lX. Défaut : 0.5
+#   --lx-end    Dernière valeur de lX, incluse. Défaut : 3.5
+#   --lx-step   Pas du balayage de lX. Défaut : 1
 #   --bande-start  Première largeur de bande d'iridophores, en lignes.
 #                  Défaut : 0 (pas d'iridophores)
 #   --bande-end    Dernière largeur, incluse. Défaut : 0
 #   --bande-step   Pas du balayage de la bande. Défaut : 1
-#   --graines   Nombre de répétitions (graines 0 à N-1). Défaut : 3
-#   --n-pas     Nombre de pas par run. Défaut : 100000 × L²
+#   --graines   Nombre de répétitions (graines 0 à N-1). Défaut : 1
+#   --n-pas     Nombre de pas par run, quel que soit L. Défaut : 10⁹ (article)
 #   --extra     Options du modèle passées à simulation.py pour tous les runs,
 #               recopiées en fin de ligne, entre guillemets. Exemple :
 #               --extra "--reseau hex --contact --rho0 0.01". Défaut : aucune
@@ -29,18 +32,19 @@
 # ── Paramètre configurable ─────────────────────────────────────────
 CHUNK_SIZE=10
 
-# ── Valeurs par défaut (balayage de pseudocode.md) ─────────────────
-DEFAULT_L=200
-DEFAULT_H_START=2
-DEFAULT_H_END=20
-DEFAULT_H_STEP=1
-DEFAULT_LX_START=1.1
-DEFAULT_LX_END=4.0
-DEFAULT_LX_STEP=0.1
+# ── Valeurs par défaut : Fig. 2 de l'article ───────────────────────
+DEFAULT_L=100
+DEFAULT_H_START=5
+DEFAULT_H_END=15
+DEFAULT_H_STEP=5
+DEFAULT_LX_START=0.5
+DEFAULT_LX_END=3.5
+DEFAULT_LX_STEP=1
 DEFAULT_BANDE_START=0
 DEFAULT_BANDE_END=0
 DEFAULT_BANDE_STEP=1
-DEFAULT_GRAINES=3
+DEFAULT_GRAINES=1
+DEFAULT_N_PAS=1000000000
 
 # ── Parsing des arguments ──────────────────────────────────────────
 L="${DEFAULT_L}"
@@ -54,7 +58,7 @@ BANDE_START="${DEFAULT_BANDE_START}"
 BANDE_END="${DEFAULT_BANDE_END}"
 BANDE_STEP="${DEFAULT_BANDE_STEP}"
 GRAINES="${DEFAULT_GRAINES}"
-N_PAS=""
+N_PAS="${DEFAULT_N_PAS}"
 EXTRA=""
 
 while [[ $# -gt 0 ]]; do
@@ -79,8 +83,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-N_PAS="${N_PAS:-$(( 100000 * L * L ))}"
 
 # ── Chemins ────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

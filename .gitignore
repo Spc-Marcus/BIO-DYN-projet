@@ -225,3 +225,4 @@ out/*
 logs/
 params_chunks/
 results/
+params_chunks_tests/
