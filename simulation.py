@@ -21,7 +21,7 @@ résultat qu'un run fait d'une traite. Environ 1 µs par pas en Python pur.
 
 Utilisation :
     python simulation.py --h 16 --lX 2.5
-    python simulation.py --h 16 --lX 2.5 --historique                  # garde toutes les grilles
+    python simulation.py --h 16 --lX 2.5 --historique                  # garde des grilles pour un GIF
     python simulation.py --h 16 --lX 2.5 --reseau hex --contact --rho0 0.01
     python simulation.py --h 16 --lX 2.5 --tB 7000 --n_pas 800000000   # blessure au centre à t = 7000
 """
@@ -69,7 +69,14 @@ DEFAUTS = {
 # 5. Nombre de pas entre deux sauvegardes (pour pouvoir relancer)
 PAS_ENTRE_SAUVEGARDES = 10**7
 
-# 6. Voisins directs : réseau carré (ne pas changer l'ordre, il fixe les tirages),
+# 6. Historique (--historique) : une grille à chaque sauvegarde, plus une grille toutes les
+#    DT_RECONSTRUCTION u.t. pendant DUREE_RECONSTRUCTION u.t. au départ (peau vide) et après
+#    chaque blessure, pour voir la reconstruction. Mesuré à L = 100 : la zone blessée se
+#    remplit en 10 à 40 u.t. et ne se distingue plus du reste du motif après 200 à 500 u.t.
+DUREE_RECONSTRUCTION = 500
+DT_RECONSTRUCTION = 5
+
+# 7. Voisins directs : réseau carré (ne pas changer l'ordre, il fixe les tirages),
 #    réseau hexagonal = les mêmes plus une diagonale
 VOISINS_CARRE = ((1, 0), (-1, 0), (0, 1), (0, -1))
 VOISINS_HEX = VOISINS_CARRE + ((1, -1), (-1, 1))
@@ -326,7 +333,7 @@ def vers_image_hex(grille):
     return image
 
 
-# 7. Réseaux : tout ce qui dépend de la géométrie de la peau. En hexagonal, on
+# 8. Réseaux : tout ce qui dépend de la géométrie de la peau. En hexagonal, on
 #    garde la matrice L x L en coordonnées axiales : la case (i, j) est au point
 #    x = j + i/2, y = (√3/2) i du plan.
 RESEAUX = {
@@ -414,7 +421,7 @@ def blessure(grille, i, j, modele, rng):
     return True
 
 
-# 8. Table règle -> action : la fonction qui applique chaque règle
+# 9. Table règle -> action : la fonction qui applique chaque règle
 ACTIONS = {
     NAISSANCE_JAUNE: naissance_jaune,
     NAISSANCE_NOIR: naissance_noir,
@@ -438,7 +445,8 @@ def appliquer_regle(grille, i, j, regle, modele, rng):
 def simulation_peau(grille, params, pas_faits, rng):
     """
     Boucle Monte Carlo de pas_faits à n_pas : à chaque pas, une case et une
-    règle tirées au hasard. Sauvegarde tous les PAS_ENTRE_SAUVEGARDES pas.
+    règle tirées au hasard. Sauvegarde tous les PAS_ENTRE_SAUVEGARDES pas, et
+    historique serré au départ et après chaque blessure (DUREE_RECONSTRUCTION).
     """
     # 1. Données lues par les règles
     L = params["L"]
@@ -460,7 +468,12 @@ def simulation_peau(grille, params, pas_faits, rng):
     # 3. Pas de la blessure unique (--tB), -1 sinon (jamais atteint)
     pas_blessure = round(params["tB"] * L**2) if params["tB"] is not None else -1
 
-    # 4. Boucle Monte Carlo
+    # 4. Historique serré : une grille tous les pas_serre pas jusqu'au pas fin_serre,
+    #    d'abord au départ, puis après chaque blessure
+    pas_serre = DT_RECONSTRUCTION * L**2
+    fin_serre = DUREE_RECONSTRUCTION * L**2
+
+    # 5. Boucle Monte Carlo
     for pas in range(pas_faits, params["n_pas"]):
         # a. Blessure unique au centre, avant le tirage de ce pas. La boucle
         #    reprenant à pas_faits, elle n'est faite qu'une fois.
@@ -468,6 +481,7 @@ def simulation_peau(grille, params, pas_faits, rng):
             os.makedirs(params["sortie"], exist_ok=True)
             np.save(os.path.join(params["sortie"], "grille_avant_blessure.npy"), grille)
             blessure(grille, L // 2, L // 2, modele, rng)
+            fin_serre = pas + DUREE_RECONSTRUCTION * L**2
             print(f"Blessure au centre : pas {pas}, t = {pas / L**2:.0f}", flush=True)
 
         # b. Tirage d'une case et d'une règle
@@ -477,8 +491,14 @@ def simulation_peau(grille, params, pas_faits, rng):
 
         # c. Application de la règle si la configuration le permet
         appliquer_regle(grille, i, j, regle, modele, rng)
+        if regle == BLESSURE:
+            fin_serre = pas + DUREE_RECONSTRUCTION * L**2
 
-        # d. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
+        # d. Historique serré, pour voir la reconstruction
+        if pas < fin_serre and params["historique"] and (pas + 1) % pas_serre == 0:
+            sauvegarder_historique(grille, params, pas + 1)
+
+        # e. Sauvegarde régulière, pour pouvoir relancer (la finale est faite après la boucle)
         if (pas + 1) % PAS_ENTRE_SAUVEGARDES == 0 and pas + 1 < params["n_pas"]:
             sauvegarder_run(grille, params, pas + 1, rng)
 
@@ -524,14 +544,23 @@ def sauvegarder_run(grille, params, pas_faits, rng):
     plt.savefig(os.path.join(dossier, "grille.png"), dpi=150, bbox_inches="tight")
     plt.close()
 
-    # 3. Historique : deux matrices binaires (jaune, noir) compactées et compressées
+    # 3. Historique
     if params["historique"]:
-        os.makedirs(os.path.join(dossier, "historique"), exist_ok=True)
-        np.savez_compressed(os.path.join(dossier, "historique", f"grille_{pas_faits:012d}.npz"),
-                            jaune=np.packbits(grille == JAUNE, axis=-1),
-                            noir=np.packbits(grille == NOIR, axis=-1))
+        sauvegarder_historique(grille, params, pas_faits)
 
     print(f"Sauvegarde : {pas_faits} / {params['n_pas']} pas, t = {t:.0f}", flush=True)
+
+
+def sauvegarder_historique(grille, params, pas_faits):
+    """
+    Garde une copie de la grille dans historique/grille_<pas>.npz, lue par
+    timeline.py : deux matrices binaires (jaune, noir) compactées et compressées.
+    """
+    dossier = os.path.join(params["sortie"], "historique")
+    os.makedirs(dossier, exist_ok=True)
+    np.savez_compressed(os.path.join(dossier, f"grille_{pas_faits:012d}.npz"),
+                        jaune=np.packbits(grille == JAUNE, axis=-1),
+                        noir=np.packbits(grille == NOIR, axis=-1))
 
 
 def charger_run(dossier):

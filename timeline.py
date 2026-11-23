@@ -5,7 +5,8 @@ Indépendant de Slurm : se lance en local (après avoir rapatrié out/) ou sur
 la frontale, sur le dossier d'un run lancé avec --historique.
 
 Entrée : out/<run>/historique/grille_<pas>.npz, une grille tous les
-PAS_ENTRE_SAUVEGARDES pas, stockée en deux matrices binaires compactées et
+PAS_ENTRE_SAUVEGARDES pas, plus une toutes les DT_RECONSTRUCTION u.t. au
+départ et après chaque blessure, stockée en deux matrices binaires compactées et
 compressées "jaune" et "noir" (voir sauvegarder_run dans simulation.py).
 Un run sur réseau hexagonal est dessiné en briques, comme grille.png.
 
