@@ -104,7 +104,7 @@ Produit `results/final_runs.csv` : une ligne par run (`L, h, lX, bande, graine`,
 bash slurm_pipeline/05_tests_extensions.sh
 ```
 
-Lance 7 variantes (réseau hexagonal, contact, blessures, témoins…) aux 12 points de la Fig. 2, soit 84 runs avec historique, puis `06_timelines.slurm` fait le GIF et la frise de chaque run quand toutes les tâches sont finies. Valeurs et raisons : [doc/tests_extensions.md](doc/tests_extensions.md).
+Lance 5 variantes (réseau hexagonal, contact, blessures au hasard avec ou sans contact, blessure unique) aux 12 points de la Fig. 2, soit 60 runs avec historique, puis `06_timelines.slurm` fait le GIF et la frise de chaque run quand toutes les tâches sont finies. Valeurs et raisons : [doc/tests_extensions.md](doc/tests_extensions.md).
 
 ---
 
@@ -126,7 +126,7 @@ Lance 7 variantes (réseau hexagonal, contact, blessures, témoins…) aux 12 po
 | `01_prepare_chunks.sh` | `CHUNK_SIZE` | `10` | Runs par chunk |
 | `01_prepare_chunks.sh` | `DEFAULT_*` | voir options | Plages par défaut |
 | `03_submit_all.sh` | `MAX_CONCURRENT_CPU` | `40` | Tâches simultanées |
-| `05_tests_extensions.sh` | `VARIANTES`, `LB`, `MORTS` | voir le script | Variantes testées et leurs valeurs |
+| `05_tests_extensions.sh` | `VARIANTES`, `LB` | voir le script | Variantes testées et taux de blessure |
 
 ## Structure des sorties
 

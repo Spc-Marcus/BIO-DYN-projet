@@ -18,22 +18,17 @@ N_PAS=1000000000
 H_VALUES=(5 10 15)
 LX_VALUES=(0.5 1.5 2.5 3.5)
 
-# Taux de blessure : 4 à 7 blessures par run selon lX (voir doc/tests_extensions.md)
+# Taux de blessure : 4 à 7 blessures par run selon lX (voir doc/tests_extensions.md).
+# Rayon des blessures : R = h (--alpha 1, par défaut), soit un diamètre d'une période du motif.
 LB=2.5e-08
 
-# Témoin des blessures : morts naturelles (4) et (5) au taux dX = dM = LB × |D_R|,
-# |D_R| = 81, 317, 709 cases pour R = h = 5, 10, 15
-declare -A MORTS=([5]=2.025e-06 [10]=7.925e-06 [15]=1.7725e-05)
-
-# Variantes : options de simulation.py ajoutées à chaque run (TAUX_MORT est remplacé par MORTS[h])
+# Variantes : options de simulation.py ajoutées à chaque run
 VARIANTES=(
     "--reseau hex"                         # réseau hexagonal
-    "--rho0 0.01"                          # départ avec 1 % de jaunes, témoin du contact
-    "--contact --rho0 0.01"                # naissances au contact
+    "--contact --rho0 0.01"                # naissances au contact, départ avec 1 % de jaunes
     "--lB ${LB}"                           # blessures au hasard
     "--lB ${LB} --contact --rho0 0.01"     # blessures au hasard et naissances au contact
     "--tB 50000"                           # une seule blessure au centre, à t = 50 000
-    "--dX TAUX_MORT --dM TAUX_MORT"        # morts dispersées au même taux que les blessures
 )
 
 # ── Chemins ────────────────────────────────────────────────────────
@@ -46,7 +41,7 @@ RUNS=()
 for OPTIONS in "${VARIANTES[@]}"; do
     for H in "${H_VALUES[@]}"; do
         for LX in "${LX_VALUES[@]}"; do
-            RUNS+=("${L} ${H} ${LX} 0 0 ${N_PAS} ${OPTIONS//TAUX_MORT/${MORTS[$H]}}")
+            RUNS+=("${L} ${H} ${LX} 0 0 ${N_PAS} ${OPTIONS}")
         done
     done
 done

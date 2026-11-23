@@ -6,21 +6,29 @@
 bash slurm_pipeline/05_tests_extensions.sh
 ```
 
-7 variantes × 3 h × 4 lX = 84 runs, en 9 tâches de 10 runs (2 à 3 h chacune), tous avec `--historique`. Une fois toutes les tâches finies, `06_timelines.slurm` écrit `timeline.gif` et la frise `timeline.png` dans le dossier de chaque run. Relancer la même commande reprend les runs interrompus.
+5 variantes × 3 h × 4 lX = 60 runs, en 6 tâches de 10 runs (2 à 3 h chacune), tous avec `--historique`. Une fois toutes les tâches finies, `06_timelines.slurm` écrit `timeline.gif` et la frise `timeline.png` dans le dossier de chaque run. Relancer la même commande reprend les runs interrompus.
 
 ## Variantes
 
-| Variante | Options | Pourquoi |
+| Variante | Options | Ce qu'on voit |
 |---|---|---|
-| Réseau hexagonal | `--reseau hex` | Retrouve-t-on la même séquence de motifs et λ ≈ 2h ? Les rayures devraient moins suivre les axes du réseau. |
-| Départ semé | `--rho0 0.01` | Témoin du contact : même départ (1 % de jaunes, soit 100 cases), sans la règle du contact. |
-| Contact | `--contact --rho0 0.01` | Les naissances partent des cases occupées : fronts au départ ; mêmes motifs à la fin attendus. |
-| Blessures | `--lB 2.5e-08` | Quelques blessures au hasard par run : la zone se remplit, puis le motif se reforme. |
-| Blessures et contact | `--lB 2.5e-08 --contact --rho0 0.01` | C'est après une blessure que le contact change le plus : remplissage depuis le bord au lieu de partout à la fois. |
-| Blessure unique | `--tB 50000` | Une blessure au centre, à un instant connu, sur un motif formé depuis longtemps ; la grille d'avant est gardée dans `grille_avant_blessure.npy`. |
-| Morts dispersées | `--dX d --dM d` | Témoin des blessures : autant de cases vidées en moyenne, mais une par une et partout (règles (4) et (5)). Seule la forme de la blessure change. |
+| Réseau hexagonal | `--reseau hex` | Les motifs de la Fig. 2 sur un réseau à 6 voisins (image en briques) : même séquence, λ ≈ 2h, rayures moins collées aux axes. |
+| Contact | `--contact --rho0 0.01` | Au départ, les cellules poussent en fronts autour de 100 graines jaunes, au lieu d'apparaître partout ; à la fin, les mêmes motifs. |
+| Blessures | `--lB 2.5e-08` | 4 à 7 trous au hasard pendant le run : chacun se remplit partout à la fois, puis le motif s'y reforme. |
+| Blessures et contact | `--lB 2.5e-08 --contact --rho0 0.01` | Les mêmes trous, remplis depuis le bord vers le centre. |
+| Blessure unique | `--tB 50000` | Un seul trou, au centre, sur un motif formé depuis longtemps ; la grille d'avant est gardée dans `grille_avant_blessure.npy` pour comparer. |
 
 ## Valeurs
+
+**Taille de la blessure.** R = α·h avec α = 1 (`--alpha`, valeur par défaut) : le diamètre 2h vaut environ une période T du motif (T ≈ 2h dans l'article), soit une rayure noire et une jaune. La blessure garde ainsi la même taille par rapport au motif quand h change.
+
+| h | Période T ≈ 2h | Rayon R | Diamètre | Cases vidées | Part de la peau |
+|---|---|---|---|---|---|
+| 5 | ≈ 10 cases | 5 | 10 cases | 81 | 0.8 % |
+| 10 | ≈ 20 cases | 10 | 20 cases | 317 | 3.2 % |
+| 15 | ≈ 30 cases | 15 | 30 cases | 709 | 7.1 % |
+
+Même la plus grande reste sous 10 % de la peau : on voit le trou au milieu d'un motif intact. Pour deux périodes, `--alpha 2` (R = 2h, mais 28 % de la peau pour h = 15).
 
 **Taux de blessure lB = 2.5·10⁻⁸.** La règle (9) est tirée avec la probabilité p_B = lB / (Σ + lB) à chaque pas, avec Σ = b_X + 2s + l_X = 3 + l_X :
 
@@ -31,17 +39,13 @@ bash slurm_pipeline/05_tests_extensions.sh
 | 2.5 | 4.5·10⁻⁹ | 4.5 | 1.1 % | 22 000 u.t. |
 | 3.5 | 3.8·10⁻⁹ | 3.8 | 2.1 % | 26 000 u.t. |
 
-- Extrêmement rare : une case donnée est dans une blessure de l'ordre d'une fois en 10⁶ u.t. (p_B × |D_R| par u.t.), alors qu'elle est tirée une fois par u.t.
+- Extrêmement rare : une case donnée est dans une blessure de l'ordre d'une fois en 10⁶ u.t., alors qu'elle est tirée une fois par u.t.
 - Quelques fois dans une vie : 4 à 7 blessures par run, au plus 2 % de runs sans blessure.
-- Séparées : 14 000 à 26 000 u.t. entre deux blessures, bien plus que la reconstruction (ci-dessous). Chaque blessure cicatrise avant la suivante.
+- Séparées : 14 000 à 26 000 u.t. entre deux blessures, bien plus que la reconstruction (ci-dessous). Chaque trou se referme avant le suivant.
 
-**Rayon R = h** (`--alpha` 1, la valeur par défaut). Le diamètre 2h ≈ λ efface une rayure noire et une jaune. Pour h = 5, 10, 15, le disque fait 81, 317 et 709 cases, soit 0.8 %, 3.2 % et 7.1 % de la peau : une large zone reste intacte pour comparer.
+**Blessure unique à t = 50 000** : le motif est formé en moins de 5 000 u.t. ; on blesse donc une peau « adulte », et il reste 50 000 u.t. pour suivre la suite.
 
-**Morts dispersées** : d = lB × |D_R| = 2.025·10⁻⁶, 7.925·10⁻⁶ et 1.7725·10⁻⁵ pour h = 5, 10 et 15, soit autant de cases vidées par u.t. que les blessures.
-
-**Blessure unique à t = 50 000** : le motif est formé en moins de 5 000 u.t. ; il est donc stationnaire depuis longtemps, et il reste 50 000 u.t. pour suivre la suite.
-
-**Contact** : rho0 = 0.01, comme dans le prototype de la spec ; sans cases occupées au départ, une peau vide le resterait.
+**Contact, rho0 = 0.01** : avec la règle du contact, une peau vide le resterait ; on sème 1 % de jaunes (100 cases), la valeur du prototype de la spec.
 
 ## Historique
 
@@ -51,7 +55,7 @@ Mesuré à L = 100 sur un motif formé, avec une blessure R = h au centre (un ru
 
 | Après la blessure | Sans contact | Avec contact |
 |---|---|---|
-| Zone remplie à ~90 % | 10 à 20 u.t. | 20 à 40 u.t., par un front venu du bord |
+| Trou rempli à ~90 % | 10 à 20 u.t. | 20 à 40 u.t., par un front venu du bord |
 | Autant de noir qu'ailleurs | 100 à 200 u.t. | 100 à 200 u.t. |
 | Zone qu'on ne distingue plus du reste | 200 à 500 u.t. (jusqu'à 1 000 pour lX = 3.5) | idem |
 
